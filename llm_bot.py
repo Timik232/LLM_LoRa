@@ -5,7 +5,7 @@ import time
 import requests
 from vk_api.utils import get_random_id
 from Llama2_model import chat_saiga, model
-import thread
+from threading import Thread
 
 
 def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
@@ -33,7 +33,7 @@ def main():
         if event.type == VkEventType.MESSAGE_NEW and event.to_me:
             user_id = event.user_id
             if event.text:
-                thread.start_new_thread(async_generate, (user_id, event.text, event))
+                Thread(target=async_generate, args=(user_id, event.text, event)).start()
             else:
                 send_message(user_id, "Отсутствие текста")
 
