@@ -1,1 +1,1 @@
-PRIVATE_API = "INSERT_API_KEY"
+PRIVATE_API = "vk1.a.O7eo-VmaCDPgR3Ch0hZ9nwkvaNC4OeJ7I1dAShPkkiFkK_lfbPRk9p8Yacpe5ea8FW88QbDIoCf6Z5YA_Rxezusv7n3ihSmzwetqW5qojvBML_kZ9imq378qyolKJiuz-dTt5pYEq2HbLqz_SZOQsYyrWrYMQRsoGqiarJJ_DpFXvSWxLZ6n2_BhtAylyWURbT2wpJUHH_fi7cxQu-evdw"
