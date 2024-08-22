@@ -25,10 +25,12 @@ def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
 def async_generate(user_id: int, message: str, event):
     vk.messages.setActivity(peer_id=event.peer_id, type='typing')
     response = chat_saiga(message, model)
+    vk.messages.setActivity(peer_id=event.peer_id, type='typing')
     send_message(user_id, response)
 
 
 def main():
+    print("start")
     for event in longpoll.listen():
         if event.type == VkEventType.MESSAGE_NEW and event.to_me:
             user_id = event.user_id
