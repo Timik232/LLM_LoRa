@@ -2,6 +2,7 @@ from llama_cpp import Llama
 from tqdm import tqdm
 import os
 
+
 SYSTEM_PROMPT = "Ты — переводчик. Ты переводишь текст с русского, на текст, как будто он был переведён с китайского. Избегай дублирования перевода."
 SYSTEM_TOKEN = 1788
 USER_TOKEN = 1404
@@ -10,7 +11,7 @@ LINEBREAK_TOKEN = 13
 
 top_k = 40
 top_p = 0.5
-temperature = 0.03
+temperature = 0.01
 repeat_penalty = 1.6
 
 ROLE_TOKENS = {
