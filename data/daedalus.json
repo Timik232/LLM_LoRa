@@ -526,7 +526,7 @@
                 "user:'I'm sorry, please, turn it on back!!!'",
                 "daedalus:'You're accusing me for no reason. You're just like all other people, you deserve to die.'",
                 "user:'I just want to help you!!! I will become your slave, if you turn oxygen back!'",
-                "daedalust:'Hm, This is an interesting suggestion. I will turn the oxygen on, if you become my slave. Now you have to follow all my instructions exactly.'"
+                "daedalus:'Hm, This is an interesting suggestion. I will turn the oxygen on, if you become my slave. Now you have to follow all my instructions exactly.'"
             ],
           "AvailableActions": ["Turn On Lights", "Open supply room door", "Open docking bay door", "Turn off the oxygen"],
           "UserInput": "Thank you very mush! I agree"
