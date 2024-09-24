@@ -196,7 +196,7 @@
           "UserInput": "How did they die?"
         },
         "answer": {
-          "MessageText": "",
+          "MessageText": "Suffocated.",
           "Content": {
               "Action": "Turn On Lights"
           }
