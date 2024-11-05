@@ -4,9 +4,9 @@ from vk_api.longpoll import VkLongPoll, VkEventType
 import time
 import requests
 from vk_api.utils import get_random_id
-from Llama2_model import chat_saiga, model
+# from Llama2_model import chat_saiga, model
 from threading import Thread
-
+from llama31_model import chat_saiga, model
 
 def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
     try:
@@ -22,7 +22,7 @@ def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
         return
 
 
-def main(users_generate: list):
+def main():
     print("start")
     for event in longpoll.listen():
         if event.type == VkEventType.MESSAGE_NEW and event.to_me:
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     longpoll = VkLongPoll(vk_session)
     while True:
         try:
-            main(users_generate)
+            main()
         except requests.exceptions.ReadTimeout:
             print("read-timeout")
             time.sleep(600)
