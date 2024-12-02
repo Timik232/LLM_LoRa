@@ -166,3 +166,4 @@ llama.cpp
 rulm
 private_api.py
 model
+wandb
