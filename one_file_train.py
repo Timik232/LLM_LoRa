@@ -6,6 +6,8 @@ import subprocess
 import gc
 import shutil
 from utils import dataset_to_json, tokens_init, Config
+import logging as logger
+from vllm import LLM
 
 from transformers import (
     AutoModelForCausalLM,
@@ -22,8 +24,9 @@ from peft import (
     prepare_model_for_kbit_training,
     get_peft_model,
 )
-from test import test
+from test import test_via_lmstudio, test_via_vllm
 
+from logging_config import configure_logging
 from datasets import load_dataset
 from trl import SFTTrainer, setup_chat_format, SFTConfig
 from dataclasses import dataclass
@@ -115,7 +118,7 @@ def model_merge_for_converting(cfg: Config, merged_model_path="merged_model_fp16
     del model
     gc.collect()
     torch.cuda.empty_cache()
-    print("Model merged")
+    logger.info("Model merged")
 
 
 def train(cfg: Config):
@@ -132,7 +135,7 @@ def train(cfg: Config):
         device_map="auto",
         # attn_implementation=cfg.attn_implementation,
     )
-    print("Model loaded")
+    logger.info("Model loaded")
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
     # model, tokenizer = setup_chat_format(model, tokenizer)
     tokenizer.padding_side = "right"
@@ -158,7 +161,7 @@ def train(cfg: Config):
     model = get_peft_model(model, peft_config)
     CUTOFF_LEN = 4000
     train_data, val_data = data_preparation(cfg, CUTOFF_LEN, tokenizer)
-    print("Data prepared")
+    logger.info("Data prepared")
     training_arguments = TrainingArguments(
         output_dir=cfg.new_model,
         per_device_train_batch_size=1,
@@ -191,12 +194,12 @@ def train(cfg: Config):
         packing=False,
     )
     trainer.train()
-    print("Model trained")
+    logger.info("Model trained")
     merged_model = model.merge_and_unload()
     path_to_save = "Llama-finetuned"
     merged_model.save_pretrained(path_to_save)
     tokenizer.save_pretrained(path_to_save)
-    print("Model saved")
+    logger.info("Model saved")
     del model
     del merged_model
     gc.collect()
@@ -234,7 +237,7 @@ def quantize_model(model_path: str, outfile: str, qtype="q4_0", llama_cpp_path="
     llama_quantize_path = os.path.join(llama_cpp_path, "llama-quantize.exe")
 
     if not os.path.exists(llama_quantize_path):
-        print(f"Error: llama-quantize.exe not found at {llama_quantize_path}")
+        logger.error(f"Error: llama-quantize.exe not found at {llama_quantize_path}")
         return False
 
     command = [llama_quantize_path, model_path, outfile, qtype]
@@ -242,12 +245,12 @@ def quantize_model(model_path: str, outfile: str, qtype="q4_0", llama_cpp_path="
     try:
         process = subprocess.run(command, check=True, capture_output=True, cwd=llama_cpp_path)
     except subprocess.CalledProcessError as e:
-        print(f"Command failed with exit code {e.returncode}")
+        logger.error(f"Command failed with exit code {e.returncode}")
         return False
 
         # Print captured output even if no exception
-    print(f"Command output: {process.stdout.decode()}")  # Moved outside except block
-    print(f"Command stderr: {process.stderr.decode() if process.stderr else 'No stderr output.'}")
+    logger.info(f"Command output: {process.stdout.decode()}")  # Moved outside except block
+    logger.info(f"Command stderr: {process.stderr.decode() if process.stderr else 'No stderr output.'}")
     return True
 
 
@@ -296,19 +299,16 @@ def test_actions(model_path: str):
 
     response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
-    print(response)
+    logger.debug(response)
 
 
-def copy_data(file: str, version="v1", destination="T:/lm-studio/models/game-model/"):
+def copy_data(file: str, version="v1", destination="T:\lm-studio\models\game-model"):
     destination = os.path.join(destination, version, file)
     os.makedirs(os.path.dirname(destination), exist_ok=True)
     shutil.move(os.path.join(os.getcwd(), file), destination)
 
 
-
-
-def train_pipeline():
-    cfg = Config()
+def train_pipeline(cfg):
     train(cfg)
     merged_model_path = "merged_model_fp16"
     model_merge_for_converting(cfg, merged_model_path)
@@ -316,21 +316,27 @@ def train_pipeline():
     venv_python_path = r"T:\projects\LLM_LoRa\venv\Scripts\python.exe"
     outfile = "model-game_v4.gguf"
     convert_to_gguf(merged_model_path, outfile, python=venv_python_path, outtype="f16")
-    print("Converted")
-    print(outfile[:-5] + "_q4_1.gguf")
+    logger.info("Converted")
+    logger.debug(outfile[:-5] + "_q4_1.gguf")
     new_file_name = outfile[:-5] + "_q4.gguf"
     quantize_model(outfile, new_file_name, qtype="q4_1")
     copy_data(new_file_name, version="v4")
+    os.chdir("..")
 
 
 
 def main():
-    # train_pipeline()
-    print("Train Done")
-    # with open(os.path.join("data", "test_ru.json"), "r", encoding="utf-8") as file:
-    #     test_dataset = json.load(file)
-    # dataset_to_json(test_dataset, "test.json")
-    test()
+    configure_logging()
+    cfg = Config()
+    train_pipeline(cfg)
+    logger.info("Train Done")
+    os.chdir("..")
+    with open(os.path.join("data", "test_ru.json"), "r", encoding="utf-8") as file:
+        test_dataset = json.load(file)
+    dataset_to_json(test_dataset, "test.json")
+    # llm = LLM(model=os.path.join(cfg.new_model, f"checkpoint-{cfg.train_steps}"))
+    # test_via_vllm(llm)
+    test_via_lmstudio()
 
 
 if __name__ == "__main__":
