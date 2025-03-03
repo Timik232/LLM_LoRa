@@ -1,40 +1,29 @@
 import functools
-import os, torch, wandb
-import pandas as pd
-import json
-import subprocess
 import gc
-import shutil
-from utils import dataset_to_json, tokens_init, Config
+import json
 import logging as logger
-from vllm import LLM
+import os
+import shutil
+import subprocess
 
+import torch
+from peft import (
+    LoraConfig,
+    PeftModel,
+    get_peft_model,
+)
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    HfArgumentParser,
     TrainingArguments,
-    pipeline,
-    logging,
 )
-from peft import (
-    LoraConfig,
-    PeftModel,
-    prepare_model_for_kbit_training,
-    get_peft_model,
-)
-from test import test_via_lmstudio, test_via_vllm
+from trl import SFTTrainer
 
 from logging_config import configure_logging
-from datasets import load_dataset
-from trl import SFTTrainer, setup_chat_format, SFTConfig
-from dataclasses import dataclass
-
-
-from transformers import Trainer
-import transformers
-
+from testing_model import test_from_dataset
+from testing_model.test import test_via_lmstudio
+from utils import Config, dataset_to_json, tokens_init
 
 
 def generate_prompt(data_point) -> str:
@@ -122,7 +111,7 @@ def model_merge_for_converting(cfg: Config, merged_model_path="merged_model_fp16
 
 
 def train(cfg: Config):
-    run = tokens_init()
+    tokens_init()
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
@@ -140,7 +129,7 @@ def train(cfg: Config):
     # model, tokenizer = setup_chat_format(model, tokenizer)
     tokenizer.padding_side = "right"
     tokenizer.padding_token = "<|pad|>"
-    tokenizer.pad_token ="<|pad|>"
+    tokenizer.pad_token = "<|pad|>"
     model.resize_token_embeddings(len(tokenizer))
     peft_config = LoraConfig(
         r=16,
@@ -243,19 +232,24 @@ def quantize_model(model_path: str, outfile: str, qtype="q4_0", llama_cpp_path="
     command = [llama_quantize_path, model_path, outfile, qtype]
 
     try:
-        process = subprocess.run(command, check=True, capture_output=True, cwd=llama_cpp_path)
+        process = subprocess.run(
+            command, check=True, capture_output=True, cwd=llama_cpp_path
+        )
     except subprocess.CalledProcessError as e:
         logger.error(f"Command failed with exit code {e.returncode}")
         return False
 
         # Print captured output even if no exception
-    logger.info(f"Command output: {process.stdout.decode()}")  # Moved outside except block
-    logger.info(f"Command stderr: {process.stderr.decode() if process.stderr else 'No stderr output.'}")
+    logger.info(
+        f"Command output: {process.stdout.decode()}"
+    )  # Moved outside except block
+    logger.info(
+        f"Command stderr: {process.stderr.decode() if process.stderr else 'No stderr output.'}"
+    )
     return True
 
 
 def test_actions(model_path: str):
-
     torch.manual_seed(42)
 
     model_name = "t-tech/T-lite-it-1.0"
@@ -324,7 +318,6 @@ def train_pipeline(cfg):
     os.chdir("..")
 
 
-
 def main():
     configure_logging()
     cfg = Config()
@@ -336,9 +329,16 @@ def main():
     dataset_to_json(test_dataset, "test.json")
     # llm = LLM(model=os.path.join(cfg.new_model, f"checkpoint-{cfg.train_steps}"))
     # test_via_vllm(llm)
+    input("Загрузите модель и нажмите Enter")
     test_via_lmstudio()
+    test_via_lmstudio(
+        test_dataset=os.path.join("data", "dataset_ru.json"), test_file="train.json"
+    )
+    test_from_dataset()
+    test_from_dataset(
+        test_dataset=os.path.join("data", "dataset_ru.json"), test_file="train.json"
+    )
 
 
 if __name__ == "__main__":
     main()
-
