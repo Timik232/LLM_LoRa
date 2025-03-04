@@ -6,12 +6,14 @@ import os
 import shutil
 import subprocess
 
+import requests
 import torch
 from peft import (
     LoraConfig,
     PeftModel,
     get_peft_model,
 )
+from requests.auth import HTTPBasicAuth
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -21,7 +23,9 @@ from transformers import (
 from trl import SFTTrainer
 
 from logging_config import configure_logging
-from testing_model import test_from_dataset
+
+# from testing_model import test_from_dataset
+# from testing_model.deepeval import set_local_model_via_cli
 from testing_model.test import test_via_lmstudio
 from utils import Config, dataset_to_json, tokens_init
 
@@ -128,7 +132,9 @@ def train(cfg: Config):
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
     # model, tokenizer = setup_chat_format(model, tokenizer)
     tokenizer.padding_side = "right"
-    tokenizer.padding_token = "<|pad|>"
+    if tokenizer.pad_token is None:
+        tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
+    # tokenizer.padding_token = "<|pad|>"
     tokenizer.pad_token = "<|pad|>"
     model.resize_token_embeddings(len(tokenizer))
     peft_config = LoraConfig(
@@ -308,7 +314,7 @@ def train_pipeline(cfg):
     model_merge_for_converting(cfg, merged_model_path)
     os.chdir("llama.cpp")
     venv_python_path = r"T:\projects\LLM_LoRa\venv\Scripts\python.exe"
-    outfile = "model-game_v4.gguf"
+    outfile = "model-game_v5.gguf"
     convert_to_gguf(merged_model_path, outfile, python=venv_python_path, outtype="f16")
     logger.info("Converted")
     logger.debug(outfile[:-5] + "_q4_1.gguf")
@@ -327,18 +333,25 @@ def main():
     with open(os.path.join("data", "test_ru.json"), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
     dataset_to_json(test_dataset, "test.json")
-    # llm = LLM(model=os.path.join(cfg.new_model, f"checkpoint-{cfg.train_steps}"))
-    # test_via_vllm(llm)
     input("Загрузите модель и нажмите Enter")
     test_via_lmstudio()
     test_via_lmstudio(
         test_dataset=os.path.join("data", "dataset_ru.json"), test_file="train.json"
     )
-    test_from_dataset()
-    test_from_dataset(
-        test_dataset=os.path.join("data", "dataset_ru.json"), test_file="train.json"
-    )
+    # set_local_model_via_cli()
+    # test_from_dataset()
+    # test_from_dataset(
+    #     test_dataset=os.path.join("data", "dataset_ru.json"), test_file="train.json"
+    # )
+
+
+def post_new_dataset():
+    url = "https://dataset.ser13volk.me/dataset_ru"
+    files = {"file": open(os.path.join("data", "dataset_ru.json"), "rb")}
+    response = requests.post(url, files=files, auth=HTTPBasicAuth("admin", ""))
+    print(response.json())
 
 
 if __name__ == "__main__":
     main()
+    # post_new_dataset()

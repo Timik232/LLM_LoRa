@@ -8,6 +8,8 @@ from utils import get_user_prompt
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import GuidedDecodingParams
 
+from .deepeval import test_mention_number_of_values
+
 
 def dataset_to_json_for_test(dataset, filename):
     json_objects = []
@@ -54,16 +56,16 @@ def test_via_lmstudio(test_dataset="data/test_ru.json", test_file="test.json"):
     logging.debug(answers)
     logging.debug(len(prompts_to_check))
     count = 0
+    deepeval_passed_test = 0
     for number, prompt in enumerate(prompts_to_check):
-        data = {"messages": [{"role": "user", "content": prompt}]}
+        data = {
+            "messages": [{"role": "user", "content": prompt}],
+            "model": "game-model/v4/model-game_v4.1_q4.gguf",
+        }
         response = requests.post(llm_url, json=data)
         logging.debug(response.json())
-        if (
-            json.loads(response.json()["choices"][0]["message"]["content"])["Content"][
-                "Action"
-            ]
-            == answers[number]
-        ):
+        model_answer = json.loads(response.json()["choices"][0]["message"]["content"])
+        if model_answer["Content"]["Action"] == answers[number]:
             count += 1
             logging.info(f"Test {number} passed")
         else:
@@ -71,8 +73,19 @@ def test_via_lmstudio(test_dataset="data/test_ru.json", test_file="test.json"):
                 f"Test {number} failed. User input: {prompt}. \n"
                 f"Expected: {answers[number]}. Got: {json.loads(response.json()['choices'][0]['message']['content'])['Content']['Action']}"
             )
-
-    logging.info("accuracy: " + str(count / len(prompts_to_check)))
+        try:
+            test_mention_number_of_values(prompt, model_answer["MessageText"])
+            deepeval_passed_test += 1
+        except AssertionError:
+            logging.error(
+                f"Test doesn't complete for prompt: {prompt}. \nModel answer: {model_answer}."
+            )
+    total_tests = len(prompts_to_check)
+    logging.info("accuracy: " + str(count / total_tests))
+    final_metric = deepeval_passed_test / total_tests if total_tests > 0 else 0
+    logging.info(
+        f"Deepeval metrics: {final_metric:.2f} ({deepeval_passed_test}/{total_tests} test passed)"
+    )
 
 
 def test_via_vllm(llm: LLM, test_dataset="data/test_ru.json", test_file="test.json"):
