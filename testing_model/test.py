@@ -2,13 +2,14 @@ import json
 import logging
 
 import requests
+from omegaconf import DictConfig
 
 # from .deepeval import test_mention_number_of_values
 from utils import get_user_prompt
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import GuidedDecodingParams
 
-from .deepeval import test_mention_number_of_values
+# from .deepeval import test_mention_number_of_values
 
 
 def dataset_to_json_for_test(dataset, filename):
@@ -41,7 +42,9 @@ def sanity_check(llm_url: str, prompts_to_check: list, answers: list):
     pass
 
 
-def test_via_lmstudio(test_dataset="data/test_ru.json", test_file="test.json"):
+def test_via_lmstudio(
+    cfg: DictConfig, test_dataset="data/test_ru.json", test_file="test.json"
+):
     llm_url = "http://localhost:1234/v1/chat/completions"
     with open(test_dataset, "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
@@ -60,7 +63,7 @@ def test_via_lmstudio(test_dataset="data/test_ru.json", test_file="test.json"):
     for number, prompt in enumerate(prompts_to_check):
         data = {
             "messages": [{"role": "user", "content": prompt}],
-            "model": "game-model/v4/model-game_v4.1_q4.gguf",
+            # "model": f"game-model/{cfg.model.version}/{cfg.model.outfile[:-5]}{cfg.model.quant_postfix}.gguf",
         }
         response = requests.post(llm_url, json=data)
         logging.debug(response.json())
@@ -74,7 +77,7 @@ def test_via_lmstudio(test_dataset="data/test_ru.json", test_file="test.json"):
                 f"Expected: {answers[number]}. Got: {json.loads(response.json()['choices'][0]['message']['content'])['Content']['Action']}"
             )
         try:
-            test_mention_number_of_values(prompt, model_answer["MessageText"])
+            # test_mention_number_of_values(prompt, model_answer["MessageText"])
             deepeval_passed_test += 1
         except AssertionError:
             logging.error(

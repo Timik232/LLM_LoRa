@@ -1,0 +1,49 @@
+# conf/config.yaml
+#defaults:
+#  - override /logging: default
+defaults:
+  - _self_  # Add _self_ first to include the current config in composition
+  - override hydra/job_logging: disabled  # Properly override Hydra's logging
+  - override hydra/hydra_logging: disabled
+
+
+model:
+  model_name: "t-tech/T-lite-it-1.0"
+  dataset_name: "data/dataset_ru.json"
+  new_model: "tlite7b-chat-vika"
+  torch_dtype: "float16"          # ожидается значение "float16" или "float32"
+  attn_implementation: "eager"
+  train_steps: 60
+  outfile: "model-game_v5.gguf"
+  quant_postfix: "_q4"
+  qtype: "q4_1"
+  version: "v5"
+
+training:
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 8
+  num_train_epochs: 1
+  eval_steps: 10
+  logging_steps: 5
+  warmup_steps: 10
+  learning_rate: 2e-6
+  fp16: false
+  bf16: false
+  weight_decay: 0.01
+
+paths:
+  data_dir: "data"
+  merged_model_path: "merged_model_fp16"
+  output_dir: "Llama-finetuned"
+  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+  llama_cpp_dir: "llama.cpp"
+
+other:
+  cutoff_len: 4000
+
+hydra:
+  run:
+    dir: .
+  job:
+    chdir: true  # Address future Hydra working dir change warning

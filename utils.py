@@ -1,25 +1,23 @@
 import json
-from dataclasses import dataclass
 
-import torch
-
+# from dataclasses import dataclass
+# import torch
 import wandb
 from private_api import WANB_API
 
-
-@dataclass
-class Config:
-    # model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-    # model_name = "aifeifei798/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored"
-    # model_name = "IlyaGusev/saiga_llama3_8b"
-    model_name = "t-tech/T-lite-it-1.0"
-    # model_name = "yandex/YandexGPT-5-Lite-8B-pretrain"
-    dataset_name = "data/dataset_ru.json"
-    # dataset_name = "ruslanmv/ai-medical-chatbot"
-    new_model = "tlite7b-chat-vika"
-    torch_dtype = torch.float16
-    attn_implementation = "eager"
-    train_steps = 60
+# @dataclass
+# class Config:
+#     # model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+#     # model_name = "aifeifei798/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored"
+#     # model_name = "IlyaGusev/saiga_llama3_8b"
+#     model_name = "t-tech/T-lite-it-1.0"
+#     # model_name = "yandex/YandexGPT-5-Lite-8B-pretrain"
+#     dataset_name = "data/dataset_ru.json"
+#     # dataset_name = "ruslanmv/ai-medical-chatbot"
+#     new_model = "tlite7b-chat-vika"
+#     torch_dtype = torch.float16
+#     attn_implementation = "eager"
+#     train_steps = 60
 
 
 def tokens_init():
