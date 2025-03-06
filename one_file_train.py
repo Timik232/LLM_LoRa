@@ -18,9 +18,10 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    TrainingArguments,
 )
-from trl import SFTTrainer
+
+# TrainingArguments,
+from trl import SFTConfig, SFTTrainer
 
 from logging_config import configure_logging
 from testing_model.test import test_via_lmstudio
@@ -123,17 +124,22 @@ def model_merge_for_converting(cfg: DictConfig):
 
 
 def train(cfg: DictConfig):
-    tokens_init()
+    tokens_init(cfg)
     torch_dtype = (
         getattr(torch, cfg.model.torch_dtype)
         if isinstance(cfg.model.torch_dtype, str)
         else cfg.model.torch_dtype
     )
+    # bnb_config = BitsAndBytesConfig(
+    #     load_in_4bit=True,
+    #     bnb_4bit_quant_type="nf4",
+    #     bnb_4bit_compute_dtype=torch_dtype,
+    #     bnb_4bit_use_double_quant=True,
+    # )
     bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch_dtype,
-        bnb_4bit_use_double_quant=True,
+        load_in_8bit=True,  # Основное изменение
+        llm_int8_threshold=6.0,  # Опционально: порог для квантизации
+        torch_dtype=torch_dtype,  # Сохраняем указание типа данных
     )
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model.model_name,
@@ -151,7 +157,6 @@ def train(cfg: DictConfig):
                 tokenizer.pad_token
             )
     model.resize_token_embeddings(len(tokenizer))
-
     peft_config = LoraConfig(
         r=16,
         lora_alpha=32,
@@ -171,15 +176,17 @@ def train(cfg: DictConfig):
     model = get_peft_model(model, peft_config)
     train_data, val_data = data_preparation(cfg, tokenizer)
     logging.info("Data prepared")
-
-    training_arguments = TrainingArguments(
+    sft_config = SFTConfig(
         output_dir=cfg.model.new_model,
+        max_seq_length=512,
+        dataset_kwargs={"skip_prepare_dataset": True},
+        packing=False,
         run_name=cfg.model.new_model,
         per_device_train_batch_size=cfg.training.per_device_train_batch_size,
         per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
         gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
         # max_steps=cfg.model.train_steps,
-        optim="paged_adamw_32bit",
+        optim="adamw_bnb_8bit",
         num_train_epochs=cfg.training.num_train_epochs,
         eval_strategy="steps",
         eval_steps=cfg.training.eval_steps,
@@ -193,6 +200,27 @@ def train(cfg: DictConfig):
         group_by_length=True,
         report_to="wandb",
     )
+    # training_arguments = TrainingArguments(
+    #     output_dir=cfg.model.new_model,
+    #     run_name=cfg.model.new_model,
+    #     per_device_train_batch_size=cfg.training.per_device_train_batch_size,
+    #     per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
+    #     gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
+    #     # max_steps=cfg.model.train_steps,
+    #     optim="adamw_bnb_8bit",
+    #     num_train_epochs=cfg.training.num_train_epochs,
+    #     eval_strategy="steps",
+    #     eval_steps=cfg.training.eval_steps,
+    #     logging_steps=cfg.training.logging_steps,
+    #     warmup_steps=cfg.training.warmup_steps,
+    #     logging_strategy="steps",
+    #     learning_rate=cfg.training.learning_rate,
+    #     fp16=cfg.training.fp16,
+    #     bf16=cfg.training.bf16,
+    #     weight_decay=cfg.training.weight_decay,
+    #     group_by_length=True,
+    #     report_to="wandb",
+    # )
 
     trainer = SFTTrainer(
         model=model,
@@ -200,10 +228,7 @@ def train(cfg: DictConfig):
         eval_dataset=val_data,
         peft_config=peft_config,
         tokenizer=tokenizer,
-        args=training_arguments,
-        max_seq_length=512,
-        dataset_kwargs={"skip_prepare_dataset": True},
-        packing=False,
+        args=sft_config,
     )
     trainer.train()
     logging.info("Model trained")

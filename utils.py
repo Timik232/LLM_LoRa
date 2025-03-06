@@ -1,5 +1,7 @@
 import json
 
+from omegaconf import DictConfig, OmegaConf
+
 # from dataclasses import dataclass
 # import torch
 import wandb
@@ -20,7 +22,7 @@ from private_api import WANB_API
 #     train_steps = 60
 
 
-def tokens_init():
+def tokens_init(cfg: DictConfig):
     # hf_token = HUGGING_FACE_API
     #
     # login(token=hf_token)
@@ -32,6 +34,7 @@ def tokens_init():
     run = wandb.init(
         project="Fine-tune on Dataset for game",
         job_type="training",
+        config=OmegaConf.to_container(cfg, resolve=True),
         anonymous="allow",
     )
     return run
