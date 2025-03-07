@@ -53,7 +53,7 @@ def tokenize(tokenizer, cutoff_len: int, prompt: str, add_eos_token=True):
         prompt,
         truncation=True,
         max_length=cutoff_len,
-        padding=True,
+        padding="max_length",
         return_tensors=None,
     )
     if (
@@ -178,13 +178,14 @@ def train(cfg: DictConfig):
     logging.info("Data prepared")
     sft_config = SFTConfig(
         output_dir=cfg.model.new_model,
-        max_seq_length=512,
+        max_seq_length=cfg.training.max_seq_length,
         dataset_kwargs={"skip_prepare_dataset": True},
         packing=False,
         run_name=cfg.model.new_model,
         per_device_train_batch_size=cfg.training.per_device_train_batch_size,
         per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
         gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
+        # gradient_checkpointing=True,
         # max_steps=cfg.model.train_steps,
         optim="adamw_bnb_8bit",
         num_train_epochs=cfg.training.num_train_epochs,
@@ -200,34 +201,13 @@ def train(cfg: DictConfig):
         group_by_length=True,
         report_to="wandb",
     )
-    # training_arguments = TrainingArguments(
-    #     output_dir=cfg.model.new_model,
-    #     run_name=cfg.model.new_model,
-    #     per_device_train_batch_size=cfg.training.per_device_train_batch_size,
-    #     per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
-    #     gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
-    #     # max_steps=cfg.model.train_steps,
-    #     optim="adamw_bnb_8bit",
-    #     num_train_epochs=cfg.training.num_train_epochs,
-    #     eval_strategy="steps",
-    #     eval_steps=cfg.training.eval_steps,
-    #     logging_steps=cfg.training.logging_steps,
-    #     warmup_steps=cfg.training.warmup_steps,
-    #     logging_strategy="steps",
-    #     learning_rate=cfg.training.learning_rate,
-    #     fp16=cfg.training.fp16,
-    #     bf16=cfg.training.bf16,
-    #     weight_decay=cfg.training.weight_decay,
-    #     group_by_length=True,
-    #     report_to="wandb",
-    # )
 
     trainer = SFTTrainer(
         model=model,
         train_dataset=train_data,
         eval_dataset=val_data,
         peft_config=peft_config,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=sft_config,
     )
     trainer.train()
@@ -362,7 +342,9 @@ def main(cfg: DictConfig):
     with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
     dataset_to_json(test_dataset, "test.json")
-    input("Загрузите модель и нажмите Enter")
+    next = input("Загрузите модель и нажмите Enter. Для пропуска введите 0\n")
+    if next == "0":
+        return
     test_via_lmstudio(
         cfg,
         test_dataset=os.path.join(data_dir, "dataset_ru.json"),
@@ -380,7 +362,7 @@ def post_new_dataset():
     with open(os.path.join("data", "dataset_ru.json"), "rb") as f:
         files = {"file": f}
         response = requests.post(url, files=files, auth=HTTPBasicAuth("admin", ""))
-    print(response.json())
+    logging.info(response.json())
 
 
 if __name__ == "__main__":
