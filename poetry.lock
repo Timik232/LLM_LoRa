@@ -591,14 +591,14 @@ vision = ["Pillow (>=9.4.0)"]
 
 [[package]]
 name = "deepeval"
-version = "2.5.1"
+version = "2.5.2"
 description = "The Open-Source LLM Evaluation Framework."
 optional = false
 python-versions = "<3.14,>=3.9"
 groups = ["main"]
 files = [
-    {file = "deepeval-2.5.1-py3-none-any.whl", hash = "sha256:66e2c65a0596593dd4818c307a280f52b6e710dff7283194a2d31363e4806107"},
-    {file = "deepeval-2.5.1.tar.gz", hash = "sha256:f4361b00ca94b7a1d7e37c51391882b6c487912772c7b17683cd448f7795456a"},
+    {file = "deepeval-2.5.2-py3-none-any.whl", hash = "sha256:dc6246c7d9576656234ada0ce35115ba41b73161a6f6f7bd1a16139428b1403a"},
+    {file = "deepeval-2.5.2.tar.gz", hash = "sha256:8647dd573664b5d1e9ecf98269e02ea237e5c38d28b0e93d8099fbc9f681e578"},
 ]
 
 [package.dependencies]
@@ -1202,14 +1202,14 @@ packaging = "*"
 
 [[package]]
 name = "identify"
-version = "2.6.8"
+version = "2.6.9"
 description = "File identification library for Python"
 optional = false
 python-versions = ">=3.9"
 groups = ["dev"]
 files = [
-    {file = "identify-2.6.8-py2.py3-none-any.whl", hash = "sha256:83657f0f766a3c8d0eaea16d4ef42494b39b34629a4b3192a9d020d349b3e255"},
-    {file = "identify-2.6.8.tar.gz", hash = "sha256:61491417ea2c0c5c670484fd8abbb34de34cdae1e5f39a73ee65e48e4bb663fc"},
+    {file = "identify-2.6.9-py2.py3-none-any.whl", hash = "sha256:c98b4322da415a8e5a70ff6e51fbc2d2932c015532d77e9f8537b4ba7813b150"},
+    {file = "identify-2.6.9.tar.gz", hash = "sha256:d40dfe3142a1421d8518e3d3985ef5ac42890683e32306ad614a29490abeb6bf"},
 ]
 
 [package.extras]
@@ -1475,14 +1475,14 @@ tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<10"
 
 [[package]]
 name = "langchain-core"
-version = "0.3.41"
+version = "0.3.43"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "langchain_core-0.3.41-py3-none-any.whl", hash = "sha256:1a27cca5333bae7597de4004fb634b5f3e71667a3da6493b94ce83bcf15a23bd"},
-    {file = "langchain_core-0.3.41.tar.gz", hash = "sha256:d3ee9f3616ebbe7943470ade23d4a04e1729b1512c0ec55a4a07bd2ac64dedb4"},
+    {file = "langchain_core-0.3.43-py3-none-any.whl", hash = "sha256:caa6bc1f4c6ab71d3c2e400f8b62e1cd6dc5ac2c37e03f12f3e2c60befd5b273"},
+    {file = "langchain_core-0.3.43.tar.gz", hash = "sha256:bec60f4f5665b536434ff747b8f23375a812e82cfa529f519b54cc1e7a94a875"},
 ]
 
 [package.dependencies]
@@ -1496,18 +1496,18 @@ typing-extensions = ">=4.7"
 
 [[package]]
 name = "langchain-openai"
-version = "0.3.7"
+version = "0.3.8"
 description = "An integration package connecting OpenAI and LangChain"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "langchain_openai-0.3.7-py3-none-any.whl", hash = "sha256:0aefc7bdf8e7398d41e09c4313cace816df6438f2aa93d34f79523487310f0da"},
-    {file = "langchain_openai-0.3.7.tar.gz", hash = "sha256:b8b51a3aaa1cc3bda060651ea41145f7728219e8a7150b5404fb1e8446de9cef"},
+    {file = "langchain_openai-0.3.8-py3-none-any.whl", hash = "sha256:9004dc8ef853aece0d8f0feca7753dc97f710fa3e53874c8db66466520436dbb"},
+    {file = "langchain_openai-0.3.8.tar.gz", hash = "sha256:4d73727eda8102d1d07a2ca036278fccab0bb5e0abf353cec9c3973eb72550ec"},
 ]
 
 [package.dependencies]
-langchain-core = ">=0.3.39,<1.0.0"
+langchain-core = ">=0.3.42,<1.0.0"
 openai = ">=1.58.1,<2.0.0"
 tiktoken = ">=0.7,<1"
 
@@ -1528,14 +1528,14 @@ langchain-core = ">=0.3.34,<1.0.0"
 
 [[package]]
 name = "langsmith"
-version = "0.3.12"
+version = "0.3.13"
 description = "Client library to connect to the LangSmith LLM Tracing and Evaluation Platform."
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "langsmith-0.3.12-py3-none-any.whl", hash = "sha256:cf7926bd12d56adbd74a294ebbfc5a34c413172bfbdcd763175cc472b45afbea"},
-    {file = "langsmith-0.3.12.tar.gz", hash = "sha256:045b49d0401d0e985d025ff0cf69743ab9a429e309ce5d533eab3c774d004bc2"},
+    {file = "langsmith-0.3.13-py3-none-any.whl", hash = "sha256:73aaf52bbc293b9415fff4f6dad68df40658081eb26c9cb2c7bd1ff57cedd695"},
+    {file = "langsmith-0.3.13.tar.gz", hash = "sha256:14014058cff408772acb93344e03cb64174837292d5f1ae09b2c8c1d8df45e92"},
 ]
 
 [package.dependencies]
@@ -1552,15 +1552,37 @@ langsmith-pyo3 = ["langsmith-pyo3 (>=0.1.0rc2,<0.2.0)"]
 pytest = ["pytest (>=7.0.0)", "rich (>=13.9.4,<14.0.0)"]
 
 [[package]]
+name = "lightning-utilities"
+version = "0.14.0"
+description = "Lightning toolbox for across the our ecosystem."
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "lightning_utilities-0.14.0-py3-none-any.whl", hash = "sha256:29cd0e0d1aff903667c0111eee6d96e804261ad6d4a009be7f7da71520927314"},
+    {file = "lightning_utilities-0.14.0.tar.gz", hash = "sha256:9ab2424c1d44d90c9c74d6d9fe64f05e5613b8c29f94f6d407b9054cc7aee95e"},
+]
+
+[package.dependencies]
+packaging = ">=17.1"
+setuptools = "*"
+typing_extensions = "*"
+
+[package.extras]
+cli = ["fire"]
+docs = ["requests (>=2.0.0)"]
+typing = ["fire", "mypy (>=1.0.0)", "types-setuptools"]
+
+[[package]]
 name = "llama-cloud"
-version = "0.1.13"
+version = "0.1.14"
 description = ""
 optional = false
 python-versions = "<4,>=3.8"
 groups = ["main"]
 files = [
-    {file = "llama_cloud-0.1.13-py3-none-any.whl", hash = "sha256:c36d9e9288cb7298faae68797f9789615b7c72409af8f3315e3098a479c09e17"},
-    {file = "llama_cloud-0.1.13.tar.gz", hash = "sha256:cb6522fbd0f5e4c1cd2825e70bb943d0d8916816e232a5ce3be3a7272f329a8c"},
+    {file = "llama_cloud-0.1.14-py3-none-any.whl", hash = "sha256:187672847dedc018b4d2620a8d26d6bf213e425e8b91569773de48e5c2f3ca5a"},
+    {file = "llama_cloud-0.1.14.tar.gz", hash = "sha256:90741a19ba96967fa2484084928e326ae957736780a15b67bc3ad5f52e94782d"},
 ]
 
 [package.dependencies]
@@ -1570,39 +1592,39 @@ pydantic = ">=1.10"
 
 [[package]]
 name = "llama-cloud-services"
-version = "0.6.4"
+version = "0.6.5"
 description = "Tailored SDK clients for LlamaCloud services."
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "llama_cloud_services-0.6.4-py3-none-any.whl", hash = "sha256:5586b082f21ef28ca0c5888c11a6da501a355be9d21760a36796df376d20fcfb"},
-    {file = "llama_cloud_services-0.6.4.tar.gz", hash = "sha256:18ba8c7ebd015468b34f7cdb6f3e655c55bdda67ab520673daa4ab7d6e551592"},
+    {file = "llama_cloud_services-0.6.5-py3-none-any.whl", hash = "sha256:d9d4d0407b03249fea65aa369b110f9ee60601e4c82dba3e0a774f3a997d2b63"},
+    {file = "llama_cloud_services-0.6.5.tar.gz", hash = "sha256:7c00900ed72b199d7118879637a4df060065c70cc0562f3b229e47d5f85bdb7b"},
 ]
 
 [package.dependencies]
 click = ">=8.1.7,<9.0.0"
-llama-cloud = ">=0.1.11,<0.2.0"
+llama-cloud = ">=0.1.14,<0.2.0"
 llama-index-core = ">=0.11.0"
 pydantic = "!=2.10"
 python-dotenv = ">=1.0.1,<2.0.0"
 
 [[package]]
 name = "llama-index"
-version = "0.12.22"
+version = "0.12.23"
 description = "Interface between LLMs and your data"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "llama_index-0.12.22-py3-none-any.whl", hash = "sha256:a245184449954e20b791ff292536ba806027784a7e765c7c4a6bb864668d5b7d"},
-    {file = "llama_index-0.12.22.tar.gz", hash = "sha256:6d9f83530cf1adefd2719509dc7ccfbda1fed92ccca030c8ffa3eb45ccc8973b"},
+    {file = "llama_index-0.12.23-py3-none-any.whl", hash = "sha256:a099e06005f0e776a75b1cbac68af966bd2866c31f868d5c4f4e5be6ba641c60"},
+    {file = "llama_index-0.12.23.tar.gz", hash = "sha256:af1e3b0ecb63c2e6ff95874189ca68e3fcdba19bb312abb7df19c6855cc709c0"},
 ]
 
 [package.dependencies]
 llama-index-agent-openai = ">=0.4.0,<0.5.0"
 llama-index-cli = ">=0.4.1,<0.5.0"
-llama-index-core = ">=0.12.22,<0.13.0"
+llama-index-core = ">=0.12.23,<0.13.0"
 llama-index-embeddings-openai = ">=0.3.0,<0.4.0"
 llama-index-indices-managed-llama-cloud = ">=0.4.0"
 llama-index-llms-openai = ">=0.3.0,<0.4.0"
@@ -1649,14 +1671,14 @@ llama-index-llms-openai = ">=0.3.0,<0.4.0"
 
 [[package]]
 name = "llama-index-core"
-version = "0.12.22"
+version = "0.12.23.post2"
 description = "Interface between LLMs and your data"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "llama_index_core-0.12.22-py3-none-any.whl", hash = "sha256:d238eeb26e81f89b49453bb7c3c691d19ebc89dc51a5c3ed37609a619f81bd27"},
-    {file = "llama_index_core-0.12.22.tar.gz", hash = "sha256:49d4a32d0268eb719693a63ba49ce831076c2150c3cc9ed787ce1d65ecd71c0c"},
+    {file = "llama_index_core-0.12.23.post2-py3-none-any.whl", hash = "sha256:3665583d69ca9859b019aacf9496af29ec2fa3b24d031344ddeeefb0dbd00e26"},
+    {file = "llama_index_core-0.12.23.post2.tar.gz", hash = "sha256:b8e8abc2c11c2fa26bbfeebc79b00d8d12aaba370e43e3450045b50048744b90"},
 ]
 
 [package.dependencies]
@@ -3797,6 +3819,27 @@ tornado = ["tornado (>=6)"]
 unleash = ["UnleashClient (>=6.0.1)"]
 
 [[package]]
+name = "setuptools"
+version = "75.9.1"
+description = "Easily download, build, install, upgrade, and uninstall Python packages"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "setuptools-75.9.1-py3-none-any.whl", hash = "sha256:0a6f876d62f4d978ca1a11ab4daf728d1357731f978543ff18ecdbf9fd071f73"},
+    {file = "setuptools-75.9.1.tar.gz", hash = "sha256:b6eca2c3070cdc82f71b4cb4bb2946bc0760a210d11362278cf1ff394e6ea32c"},
+]
+
+[package.extras]
+check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1) ; sys_platform != \"cygwin\"", "ruff (>=0.8.0) ; sys_platform != \"cygwin\""]
+core = ["importlib_metadata (>=6) ; python_version < \"3.10\"", "jaraco.collections", "jaraco.functools (>=4)", "jaraco.text (>=3.7)", "more_itertools", "more_itertools (>=8.8)", "packaging", "packaging (>=24.2)", "platformdirs (>=4.2.2)", "tomli (>=2.0.1) ; python_version < \"3.11\"", "wheel (>=0.43.0)"]
+cover = ["pytest-cov"]
+doc = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "pygments-github-lexers (==0.0.5)", "pyproject-hooks (!=1.1)", "rst.linker (>=1.9)", "sphinx (>=3.5)", "sphinx-favicon", "sphinx-inline-tabs", "sphinx-lint", "sphinx-notfound-page (>=1,<2)", "sphinx-reredirects", "sphinxcontrib-towncrier", "towncrier (<24.7)"]
+enabler = ["pytest-enabler (>=2.2)"]
+test = ["build[virtualenv] (>=1.0.3)", "filelock (>=3.4.0)", "ini2toml[lite] (>=0.14)", "jaraco.develop (>=7.21) ; python_version >= \"3.9\" and sys_platform != \"cygwin\"", "jaraco.envs (>=2.2)", "jaraco.path (>=3.7.2)", "jaraco.test (>=5.5)", "packaging (>=24.2)", "pip (>=19.1)", "pyproject-hooks (!=1.1)", "pytest (>=6,!=8.1.*)", "pytest-home (>=0.5)", "pytest-perf ; sys_platform != \"cygwin\"", "pytest-subprocess", "pytest-timeout", "pytest-xdist (>=3)", "tomli-w (>=1.0.0)", "virtualenv (>=13.0.0)", "wheel (>=0.44.0)"]
+type = ["importlib_metadata (>=7.0.2) ; python_version < \"3.10\"", "jaraco.develop (>=7.21) ; sys_platform != \"cygwin\"", "mypy (==1.14.*)", "pytest-mypy"]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 description = "Tool to Detect Surrounding Shell"
@@ -4131,6 +4174,35 @@ optree = ["optree (>=0.13.0)"]
 type = "legacy"
 url = "https://download.pytorch.org/whl/cu118"
 reference = "torch-cuda"
+
+[[package]]
+name = "torchmetrics"
+version = "1.6.2"
+description = "PyTorch native Metrics"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "torchmetrics-1.6.2-py3-none-any.whl", hash = "sha256:586b970aff33a2154bfb6ed4539a557e9a268b6dce408bbdef0fec99fef3c78b"},
+    {file = "torchmetrics-1.6.2.tar.gz", hash = "sha256:a3fa6372dbf01183d0f6fda2159e9526fb62818aa3630660909c290425f67df6"},
+]
+
+[package.dependencies]
+lightning-utilities = ">=0.8.0"
+numpy = ">1.20.0"
+packaging = ">17.1"
+torch = ">=2.0.0"
+
+[package.extras]
+all = ["SciencePlots (>=2.0.0)", "gammatone (>=1.0.0)", "ipadic (>=1.0.0)", "librosa (>=0.10.0)", "matplotlib (>=3.6.0)", "mecab-python3 (>=1.0.6)", "mypy (==1.15.0)", "nltk (>3.8.1)", "onnxruntime (>=1.12.0)", "pesq (>=0.0.4)", "piq (<=0.8.0)", "pycocotools (>2.0.0)", "pystoi (>=0.4.0)", "regex (>=2021.9.24)", "requests (>=2.19.0)", "scipy (>1.0.0)", "sentencepiece (>=0.2.0)", "torch (==2.6.0)", "torch-fidelity (<=0.4.0)", "torchaudio (>=2.0.1)", "torchvision (>=0.15.1)", "torchvision (>=0.15.1)", "tqdm (<4.68.0)", "transformers (>4.4.0)", "transformers (>=4.42.3)", "types-PyYAML", "types-emoji", "types-protobuf", "types-requests", "types-setuptools", "types-six", "types-tabulate"]
+audio = ["gammatone (>=1.0.0)", "librosa (>=0.10.0)", "onnxruntime (>=1.12.0)", "pesq (>=0.0.4)", "pystoi (>=0.4.0)", "requests (>=2.19.0)", "torchaudio (>=2.0.1)"]
+detection = ["pycocotools (>2.0.0)", "torchvision (>=0.15.1)"]
+dev = ["PyTDC (==0.4.1) ; python_version < \"3.12\"", "SciencePlots (>=2.0.0)", "bert_score (==0.3.13)", "dython (==0.7.9)", "fairlearn", "fast-bss-eval (>=0.1.0)", "faster-coco-eval (>=1.6.3)", "gammatone (>=1.0.0)", "huggingface-hub (<0.30)", "ipadic (>=1.0.0)", "jiwer (>=2.3.0)", "kornia (>=0.6.7)", "librosa (>=0.10.0)", "lpips (<=0.1.4)", "matplotlib (>=3.6.0)", "mecab-ko (>=1.0.0,<1.1.0) ; python_version < \"3.12\"", "mecab-ko-dic (>=1.0.0) ; python_version < \"3.12\"", "mecab-python3 (>=1.0.6)", "mir-eval (>=0.6)", "monai (==1.4.0)", "mypy (==1.15.0)", "netcal (>1.0.0)", "nltk (>3.8.1)", "numpy (<2.3.0)", "onnxruntime (>=1.12.0)", "pandas (>1.4.0)", "permetrics (==2.0.0)", "pesq (>=0.0.4)", "piq (<=0.8.0)", "pycocotools (>2.0.0)", "pystoi (>=0.4.0)", "pytorch-msssim (==1.0.0)", "regex (>=2021.9.24)", "requests (>=2.19.0)", "rouge-score (>0.1.0)", "sacrebleu (>=2.3.0)", "scikit-image (>=0.19.0)", "scipy (>1.0.0)", "scipy (>1.0.0)", "sentencepiece (>=0.2.0)", "sewar (>=0.4.4)", "statsmodels (>0.13.5)", "torch (==2.6.0)", "torch-fidelity (<=0.4.0)", "torch_complex (<0.5.0)", "torchaudio (>=2.0.1)", "torchvision (>=0.15.1)", "torchvision (>=0.15.1)", "tqdm (<4.68.0)", "transformers (>4.4.0)", "transformers (>=4.42.3)", "types-PyYAML", "types-emoji", "types-protobuf", "types-requests", "types-setuptools", "types-six", "types-tabulate"]
+image = ["scipy (>1.0.0)", "torch-fidelity (<=0.4.0)", "torchvision (>=0.15.1)"]
+multimodal = ["piq (<=0.8.0)", "transformers (>=4.42.3)"]
+text = ["ipadic (>=1.0.0)", "mecab-python3 (>=1.0.6)", "nltk (>3.8.1)", "regex (>=2021.9.24)", "sentencepiece (>=0.2.0)", "tqdm (<4.68.0)", "transformers (>4.4.0)"]
+typing = ["mypy (==1.15.0)", "torch (==2.6.0)", "types-PyYAML", "types-emoji", "types-protobuf", "types-requests", "types-setuptools", "types-six", "types-tabulate"]
+visual = ["SciencePlots (>=2.0.0)", "matplotlib (>=3.6.0)"]
 
 [[package]]
 name = "tqdm"
@@ -4828,5 +4900,5 @@ cffi = ["cffi (>=1.11)"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = "3.11"
-content-hash = "0c3978a0c1ad51ea8bb063040e9adec9e7962f15ee4b5642d5a7d7198dfd788e"
+python-versions = "==3.11"
+content-hash = "fa64a50d17c9930fc776987f9cfbe0e6685e71b5d1417b8a358553d8475b5dee"

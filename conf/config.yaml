@@ -18,20 +18,26 @@ model:
   quant_postfix: "_q4"
   qtype: "q4_1"
   version: "v5"
+  lora_r: 8
+  lora_alpha: 16
+  lora_dropout: 0.1
 
 training:
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 8
-  num_train_epochs: 3
+  gradient_accumulation_steps: 4
+  num_train_epochs: 1
   eval_steps: 20
   logging_steps: 5
   warmup_steps: 10
-  learning_rate: 2e-5
+  learning_rate: 2e-6
   fp16: false
   bf16: true
-  weight_decay: 0.01
-  max_seq_length: 1024
+  weight_decay: 0.05
+  max_seq_length: 2048
+  optim: "paged_adamw_8bit"
+  neftune_noise_alpha: 0
+  gradient_checkpointing: true
 
 paths:
   data_dir: "data"
@@ -41,7 +47,7 @@ paths:
   llama_cpp_dir: "llama.cpp"
 
 other:
-  cutoff_len: 1024
+  cutoff_len: 2048
 
 hydra:
   run:

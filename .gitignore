@@ -167,3 +167,9 @@ rulm
 private_api.py
 model
 wandb
+
+.hydra/
+
+Llama-finetuned/
+
+outputs/
