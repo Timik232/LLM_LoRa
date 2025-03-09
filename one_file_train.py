@@ -106,9 +106,9 @@ def data_preparation(cfg: DictConfig, tokenizer: AutoTokenizer):
     return train_data, val_data
 
 
-def model_merge_for_converting(cfg: DictConfig):
+def model_merge_for_converting(cfg: DictConfig, steps: int = 60):
     model_path = cfg.model.model_name
-    adapter_path = f"{cfg.model.new_model}/checkpoint-{cfg.model.train_steps}"
+    adapter_path = f"{cfg.model.new_model}/checkpoint-{steps}"
     model = AutoModelForCausalLM.from_pretrained(
         model_path, torch_dtype="auto", device_map="auto"
     )
@@ -146,6 +146,7 @@ def train(cfg: DictConfig):
         cfg.model.model_name,
         quantization_config=bnb_config,
         device_map="auto",
+        use_cache=False,
     )
     logging.info("Model loaded")
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.model_name)
@@ -217,6 +218,7 @@ def train(cfg: DictConfig):
     )
     trainer.train()
     logging.info("Model trained")
+    global_steps = trainer.state.global_step
     merged_model = model.merge_and_unload()
     merged_model.save_pretrained(cfg.paths.output_dir)
     tokenizer.save_pretrained(cfg.paths.output_dir)
@@ -224,6 +226,7 @@ def train(cfg: DictConfig):
     del model, merged_model
     gc.collect()
     torch.cuda.empty_cache()
+    return global_steps
 
 
 def convert_to_gguf(model_path: str, outfile: str, python_exe="python", outtype="f16"):
@@ -273,9 +276,9 @@ def copy_data(file: str, version="v1", destination=r"T:\lm-studio\models\game-mo
 
 
 def train_pipeline(cfg: DictConfig):
-    train(cfg)
+    steps = train(cfg)
     merged_model_path = "merged_model_fp16"
-    model_merge_for_converting(cfg)
+    model_merge_for_converting(cfg, steps)
     with change_dir("llama.cpp"):
         venv_python_path = r"T:\projects\LLM_LoRa\venv\Scripts\python.exe"
         outfile = cfg.model.outfile
