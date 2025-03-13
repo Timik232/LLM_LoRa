@@ -6,10 +6,9 @@ import os
 import shutil
 import subprocess
 from contextlib import contextmanager
+from tempfile import TemporaryDirectory
 
 # from typing import Any, Dict, List, Union
-import hydra
-
 # import numpy as np
 import requests
 import torch
@@ -27,9 +26,9 @@ from transformers import (
 from trl import SFTConfig, SFTTrainer
 
 import wandb
-from logging_config import configure_logging
-from testing_model.test import test_via_lmstudio
-from utils import dataset_to_json, tokens_init
+
+from .logging_config import configure_logging
+from .utils import dataset_to_json, tokens_init
 
 
 @contextmanager
@@ -88,25 +87,32 @@ def data_preparation(cfg: DictConfig, tokenizer: AutoTokenizer):
         os.path.join(get_original_cwd(), cfg.model.dataset_name), "r", encoding="utf-8"
     ) as file:
         train_dataset = json.load(file)
-    dataset_to_json(train_dataset, "train.json")
-    dataset_to_json(test_dataset, "test.json")
 
-    from datasets import load_dataset
+    # Use temporary directory for JSON files
+    with TemporaryDirectory() as temp_dir:
+        train_json = os.path.join(temp_dir, "train.json")
+        test_json = os.path.join(temp_dir, "test.json")
+        dataset_to_json(train_dataset, train_json)
+        dataset_to_json(test_dataset, test_json)
 
-    dataset = load_dataset(
-        "json", data_files={"train": "train.json", "test": "test.json"}
-    )
-    tokenize_partial = functools.partial(
-        generate_and_tokenize_prompt,
-        tokenizer=tokenizer,
-        cutoff=cfg.other.cutoff_len,
-    )
-    train_data = dataset["train"].map(tokenize_partial)
-    val_data = dataset["test"].map(tokenize_partial)
+        from datasets import load_dataset
+
+        dataset = load_dataset(
+            "json", data_files={"train": train_json, "test": test_json}
+        )
+
+        tokenize_partial = functools.partial(
+            generate_and_tokenize_prompt,
+            tokenizer=tokenizer,
+            cutoff=cfg.other.cutoff_len,
+        )
+        train_data = dataset["train"].map(tokenize_partial)
+        val_data = dataset["test"].map(tokenize_partial)
+
     return train_data, val_data
 
 
-def model_merge_for_converting(cfg: DictConfig, steps: int = 60):
+def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str):
     model_path = cfg.model.model_name
     adapter_path = f"{cfg.model.new_model}/checkpoint-{steps}"
     model = AutoModelForCausalLM.from_pretrained(
@@ -116,8 +122,8 @@ def model_merge_for_converting(cfg: DictConfig, steps: int = 60):
     model = PeftModel.from_pretrained(model, adapter_path)
     model = model.merge_and_unload()
 
-    model.save_pretrained(cfg.paths.merged_model_path)
-    tokenizer.save_pretrained(cfg.paths.merged_model_path)
+    model.save_pretrained(save_path)
+    tokenizer.save_pretrained(save_path)
     del model
     gc.collect()
     torch.cuda.empty_cache()
@@ -206,6 +212,8 @@ def train(cfg: DictConfig):
         gradient_checkpointing_kwargs={"use_reentrant": False},
         group_by_length=True,
         report_to="wandb",
+        save_total_limit=cfg.training.save_total_limit,
+        load_best_model_at_end=cfg.training.load_best,
     )
 
     trainer = SFTTrainer(
@@ -229,35 +237,66 @@ def train(cfg: DictConfig):
     return global_steps
 
 
-def convert_to_gguf(model_path: str, outfile: str, python_exe="python", outtype="f16"):
-    subprocess.run(
-        [
-            python_exe,
-            "convert_hf_to_gguf.py",
-            f"../{model_path}",
-            "--outfile",
-            outfile,
-            "--outtype",
-            outtype,
-        ],
-        check=True,
-    )
+def convert_to_gguf(
+    model_path: str, outfile: str, python_exe: str, outtype: str, cfg: DictConfig
+):
+    """Convert model to GGUF format with config-based paths"""
+    try:
+        llama_cpp_dir = os.path.abspath(cfg.paths.llama_cpp_dir)
+        conversion_script = os.path.join(llama_cpp_dir, "convert_hf_to_gguf.py")
+
+        if not os.path.isdir(llama_cpp_dir):
+            raise FileNotFoundError(f"llama.cpp directory not found: {llama_cpp_dir}")
+        if not os.path.exists(conversion_script):
+            raise FileNotFoundError(f"Conversion script missing: {conversion_script}")
+
+        model_path = os.path.normpath(os.path.abspath(model_path))
+        outfile = os.path.normpath(os.path.abspath(outfile))
+        python_exe = os.path.normpath(cfg.paths.venv_python_path)
+
+        subprocess.run(
+            [
+                python_exe,
+                conversion_script,
+                model_path,
+                "--outfile",
+                outfile,
+                "--outtype",
+                outtype,
+            ],
+            check=True,
+            cwd=llama_cpp_dir,
+        )
+    except subprocess.CalledProcessError:
+        logging.error(
+            f"GGUF conversion failed. Check:\n"
+            f"- llama.cpp exists at {cfg.paths.llama_cpp_dir}\n"
+            f"- Conversion script exists: {os.path.join(cfg.paths.llama_cpp_dir, 'convert_hf_to_gguf.py')}\n"
+            f"- Python executable: {python_exe}\n"
+            f"- Model path: {model_path}"
+        )
 
 
 def quantize_model(model_path: str, outfile: str, qtype="q4_0", llama_cpp_path="."):
     """
     Квантование модели с помощью инструмента llama-quantize.exe.
     """
-    llama_quantize_path = os.path.join(llama_cpp_path, "llama-quantize.exe")
+    llama_cpp_dir = os.path.abspath(llama_cpp_path)
+    llama_quantize_path = os.path.join(llama_cpp_dir, "llama-quantize.exe")
+    model_path = os.path.abspath(model_path)
+    outfile = os.path.abspath(outfile)
     if not os.path.exists(llama_quantize_path):
         logging.error(f"Error: llama-quantize.exe not found at {llama_quantize_path}")
         return False
 
+    logging.info("Trying to quantize model...")
     command = [llama_quantize_path, model_path, outfile, qtype]
+    logging.info(f"Running command: {command}")
     try:
         process = subprocess.run(
-            command, check=True, capture_output=True, cwd=llama_cpp_path
+            command, check=True, capture_output=True, cwd=llama_cpp_dir
         )
+        logging.info("Model quantized")
     except subprocess.CalledProcessError as e:
         logging.error(f"Command failed with exit code {e.returncode}")
         return False
@@ -276,54 +315,62 @@ def copy_data(file: str, version="v1", destination=r"T:\lm-studio\models\game-mo
 
 
 def train_pipeline(cfg: DictConfig):
-    steps = train(cfg)
-    merged_model_path = "merged_model_fp16"
-    model_merge_for_converting(cfg, steps)
-    with change_dir("llama.cpp"):
-        venv_python_path = r"T:\projects\LLM_LoRa\venv\Scripts\python.exe"
-        outfile = cfg.model.outfile
-        convert_to_gguf(
-            merged_model_path, outfile, python_exe=venv_python_path, outtype="f16"
-        )
-        logging.info("Converted")
-        new_file_name = outfile[:-5] + f"{cfg.model.quant_postfix}.gguf"
-        quantize_model(outfile, new_file_name, qtype=cfg.model.qtype)
-        copy_data(new_file_name, version="v5")
-    logging.info("Train Done")
-    wandb.finish()
+    try:
+        steps = train(cfg)
+
+        with TemporaryDirectory() as merged_model_dir:
+            model_merge_for_converting(cfg, steps, merged_model_dir)
+
+            outfile = cfg.model.outfile
+
+            convert_to_gguf(
+                model_path=merged_model_dir,
+                outfile=os.path.join(merged_model_dir, outfile),
+                python_exe=cfg.paths.venv_python_path,
+                outtype="f16",
+                cfg=cfg,
+            )
+            logging.info(f"Converted to GGUF: {outfile}")
+
+            quantized_file = outfile.replace(".gguf", f"{cfg.model.quant_postfix}.gguf")
+            if quantize_model(
+                model_path=os.path.join(merged_model_dir, outfile),
+                outfile=quantized_file,
+                qtype=cfg.model.qtype,
+                llama_cpp_path=os.path.abspath(cfg.paths.llama_cpp_dir),
+            ):
+                copy_data(quantized_file, cfg.model.version, cfg.paths.lmstudio_path)
+                if os.path.exists(quantized_file):
+                    os.remove(quantized_file)
+                    logging.info(f"Removed intermediate file: {quantized_file}")
+            else:
+                raise RuntimeError("Quantization failed")
+
+        logging.info("Training pipeline completed")
+
+    finally:
+        wandb.finish()
+        logging.info("Wandb finished")
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
-@hydra.main(version_base="1.1", config_path="conf", config_name="config")
-def main(cfg: DictConfig):
+def main_train(data_dir: str, cfg: DictConfig):
     train_pipeline(cfg)
-    data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
     with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
-    dataset_to_json(test_dataset, "test.json")
-    next = input("Загрузите модель и нажмите Enter. Для пропуска введите 0\n")
-    if next == "0":
-        return
-    test_via_lmstudio(
-        cfg,
-        test_dataset=os.path.join(data_dir, "dataset_ru.json"),
-        test_file="train.json",
-    )
-    test_via_lmstudio(
-        cfg,
-        test_dataset=os.path.join(data_dir, "dataset_ru.json"),
-        test_file="train.json",
-    )
+    dataset_to_json(test_dataset, "../test.json")
 
 
 def post_new_dataset():
     url = "https://dataset.ser13volk.me/dataset_ru"
-    with open(os.path.join("data", "dataset_ru.json"), "rb") as f:
+    with open(os.path.join("../data", "dataset_ru.json"), "rb") as f:
         files = {"file": f}
         response = requests.post(url, files=files, auth=HTTPBasicAuth("admin", ""))
     logging.info(response.json())
 
 
 if __name__ == "__main__":
-    configure_logging()
-    main()
+    configure_logging(logging.DEBUG)
+    main_train()
     # post_new_dataset()

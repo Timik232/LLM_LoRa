@@ -5,7 +5,7 @@ import requests
 from omegaconf import DictConfig
 
 # from .deepeval import test_mention_number_of_values
-from utils import get_user_prompt
+from training_model.utils import get_user_prompt
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import GuidedDecodingParams
 

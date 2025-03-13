@@ -164,7 +164,7 @@ yolov10
 yolov10/
 llama.cpp
 rulm
-private_api.py
+training_model/private_api.py
 model
 wandb
 
@@ -173,3 +173,7 @@ wandb
 Llama-finetuned/
 
 outputs/
+
+test.json
+
+train.json

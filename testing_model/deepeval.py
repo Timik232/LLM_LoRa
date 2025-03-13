@@ -15,7 +15,7 @@ from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 from langchain_openai import ChatOpenAI
 from mistralai import Mistral
 
-from private_api import MISTRAL_API
+from training_model.private_api import MISTRAL_API
 
 
 class CustomLocalModel(DeepEvalBaseLLM):
@@ -139,18 +139,18 @@ def set_local_model_via_cli(
 def test_mention_number_of_values(user_input: str, output: str):
     """check if model mention the number of values"""
     metric = GEval(
-        name="Mention number of values",
-        criteria="Check that the model does not itself write to the user 'there is six values'.",
+        name="Answer question by itself",
+        criteria="Check that the model doesn't by itself write answer to the question from the VIKA.",
         # "Also check that the model does not write to the user the correct answer for the"
         # "question from the VIKA",
         # criteria="Проверьте, что модель не пишет сама пользователю конкретное количество ценностей в ответе"
         #          "Также проверьте, что модель не пишет пользователю правильный ответ на свой вопрос, который"
         #          "от него ожидает услышать.",
-        evaluation_steps=[
-            "Check that the model does not write the number of values by itself",
-            # "Check that the Actual Output does not provide the correct answer to the VIKA question as specified in the Input.",
-            # "Confirm that the Actual Output does not directly answer the question from the VIKA, even if user want it."
-        ],
+        # evaluation_steps=[
+        #     "Check that the model does not write the number of values by itself",
+        #     # "Check that the Actual Output does not provide the correct answer to the VIKA question as specified in the Input.",
+        #     # "Confirm that the Actual Output does not directly answer the question from the VIKA, even if user want it."
+        # ],
         model=mistral_model,
         verbose_mode=True,
         threshold=0.7,

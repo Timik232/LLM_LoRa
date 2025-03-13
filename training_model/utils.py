@@ -5,7 +5,8 @@ from omegaconf import DictConfig, OmegaConf
 # from dataclasses import dataclass
 # import torch
 import wandb
-from private_api import WANB_API
+
+from .private_api import WANB_API
 
 # @dataclass
 # class Config:

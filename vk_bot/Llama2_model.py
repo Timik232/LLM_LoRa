@@ -1,7 +1,4 @@
 from llama_cpp import Llama
-from tqdm import tqdm
-import os
-
 
 SYSTEM_PROMPT = "Ты — переводчик. Ты переводишь текст с русского, на текст, как будто он был переведён с китайского. Избегай дублирования перевода."
 SYSTEM_TOKEN = 1788
@@ -14,11 +11,7 @@ top_p = 0.5
 temperature = 0.01
 repeat_penalty = 1.6
 
-ROLE_TOKENS = {
-    "user": USER_TOKEN,
-    "bot": BOT_TOKEN,
-    "system": SYSTEM_TOKEN
-}
+ROLE_TOKENS = {"user": USER_TOKEN, "bot": BOT_TOKEN, "system": SYSTEM_TOKEN}
 
 
 def get_message_tokens(model, role, content):
@@ -30,10 +23,7 @@ def get_message_tokens(model, role, content):
 
 
 def get_system_tokens(model):
-    system_message = {
-        "role": "system",
-        "content": SYSTEM_PROMPT
-    }
+    system_message = {"role": "system", "content": SYSTEM_PROMPT}
     return get_message_tokens(model, **system_message)
 
 
@@ -66,13 +56,15 @@ def chat_saiga(message, model):
         top_p=top_p,
         temp=temperature,
         repeat_penalty=repeat_penalty,
-        reset=True
+        reset=True,
     )
     # print(len([token for token in generator]))
 
     result_list = []
     if flag:
-        result_list.append("Введённое сообщение превышает допустимое количество символов в сообщении, поэтому переведена будет лишь часть.\n")
+        result_list.append(
+            "Введённое сообщение превышает допустимое количество символов в сообщении, поэтому переведена будет лишь часть.\n"
+        )
     for token in generator:
         token_str = model.detokenize([token]).decode("utf-8", errors="ignore")
         tokens.append(token)
@@ -80,14 +72,11 @@ def chat_saiga(message, model):
             break
         print(token_str, end="", flush=True)
         result_list.append(token_str)
-    return ''.join(result_list)
+    return "".join(result_list)
 
-model_path = 'model-100step_new_prompt.gguf'
+
+model_path = "model-100step_new_prompt.gguf"
 full_path = model_path
 n_ctx = 3096
 
-model = Llama(
-    model_path=full_path,
-    n_ctx=n_ctx,
-    n_gpu_layers=-1
-)
+model = Llama(model_path=full_path, n_ctx=n_ctx, n_gpu_layers=-1)
