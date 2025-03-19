@@ -6,8 +6,8 @@ from omegaconf import DictConfig
 
 # from .deepeval import test_mention_number_of_values
 from training_model.utils import get_user_prompt
-from vllm import LLM, SamplingParams
-from vllm.sampling_params import GuidedDecodingParams
+# from vllm import LLM, SamplingParams
+# from vllm.sampling_params import GuidedDecodingParams
 
 # from .deepeval import test_mention_number_of_values
 
@@ -91,7 +91,7 @@ def test_via_lmstudio(
     )
 
 
-def test_via_vllm(llm: LLM, test_dataset="data/test_ru.json", test_file="test.json"):
+def test_via_vllm(llm, test_dataset="data/test_ru.json", test_file="test.json"):
     """
     Test the model using the test dataset.
     :param llm: LLM model
