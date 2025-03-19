@@ -14,19 +14,19 @@ def main(cfg: DictConfig):
     configure_logging(logging.DEBUG)
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
     main_train(data_dir, cfg)
-    next = input("Загрузите модель и нажмите Enter. Для пропуска введите 0\n")
-    if next == "0":
-        return
+    #next = input("Загрузите модель и нажмите Enter. Для пропуска введите 0\n")
+    #if next == "0":
+    #    return
     # test_via_lmstudio(
     #     cfg,
     #     test_dataset=os.path.join(data_dir, "dataset_ru.json"),
     #     test_file="train.json",
     # )
-    test_via_lmstudio(
-        cfg,
-        test_dataset=os.path.join(data_dir, "test_ru.json"),
-        test_file="../test.json",
-    )
+    # test_via_lmstudio(
+    #     cfg,
+    #     test_dataset=os.path.join(data_dir, "test_ru.json"),
+    #     test_file="../test.json",
+    # )
 
 
 if __name__ == "__main__":
