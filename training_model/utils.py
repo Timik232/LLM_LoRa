@@ -41,16 +41,19 @@ def tokens_init(cfg: DictConfig):
     return run
 
 
-def get_user_prompt(data):
-    user_message = (
-        "Системное сообщение, которому ты должен следовать, отмечено словом 'system'. "
-        "Предыдущие сообщения пользователя отмечены словом 'user'. Твои предыдущие сообщения отмечены словом 'VIKA'. "
-        "\n\nИстория сообщений:"
-    )
+def get_user_prompt(data: dict):
+    user_message = data["History"][0]
     for message in data["History"]:
         user_message += f"\n{message}"
-    user_message += f"\n\nТы можешь совершать только действия из представленного списка.\nДоступные действия:\n Разговор, {', '.join(data['AvailableActions'])}"
-    user_message += f"\n\nОтветь на сообщение пользователя, беря во внимания всю предыдущую информацию.\nСообщение пользователя:\n{data['UserInput']}"
+    user_message += f"\nАргумент защитника:\n{data['UserInput']}"
+    return user_message
+
+
+def get_judgement_prompt(data: dict):
+    user_message = data["History"][0]
+    for message in data["History"]:
+        user_message += f"\n{message}"
+    user_message += f"\nПредоставь решение на основе предоставленной информации."
     return user_message
 
 
