@@ -81,7 +81,9 @@ def generate_and_tokenize_prompt(
 
 def data_preparation(cfg: DictConfig, tokenizer: AutoTokenizer):
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
-    with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
+    with open(
+        os.path.join(data_dir, cfg.model.test_dataset_name), "r", encoding="utf-8"
+    ) as file:
         test_dataset = json.load(file)
     with open(
         os.path.join(get_original_cwd(), cfg.model.dataset_name), "r", encoding="utf-8"
@@ -357,9 +359,13 @@ def train_pipeline(cfg: DictConfig):
 
 def main_train(data_dir: str, cfg: DictConfig):
     train_pipeline(cfg)
-    with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
+    with open(
+        os.path.join(data_dir, cfg.model.test_dataset_name), "r", encoding="utf-8"
+    ) as file:
         test_dataset = json.load(file)
-    dataset_to_json(test_dataset, "../test.json")
+    data = dataset_to_json(test_dataset, "../test.json")
+    with open("test.json", "w", encoding="utf-8") as file:
+        json.dump(data, file, indent=4, ensure_ascii=False)
 
 
 def post_new_dataset():

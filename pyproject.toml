@@ -7,7 +7,7 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = "^3.11"
+requires-python = ">=3.10"
 dependencies = [
     "transformers (>=4.49.0,<5.0.0)",
     "peft (>=0.14.0,<0.15.0)",

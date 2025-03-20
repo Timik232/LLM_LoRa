@@ -1,12 +1,13 @@
 import json
 
+from huggingface_hub import login
 from omegaconf import DictConfig, OmegaConf
 
 # from dataclasses import dataclass
 # import torch
 import wandb
 
-from .private_api import WANB_API
+from .private_api import HUGGING_FACE_API, WANB_API
 
 # @dataclass
 # class Config:
@@ -24,9 +25,9 @@ from .private_api import WANB_API
 
 
 def tokens_init(cfg: DictConfig):
-    # hf_token = HUGGING_FACE_API
+    hf_token = HUGGING_FACE_API
     #
-    # login(token=hf_token)
+    login(token=hf_token)
 
     # wb_token = user_secrets.get_secret("wandb_api_key")
     wb_token = WANB_API
@@ -45,7 +46,7 @@ def get_user_prompt(data: dict):
     user_message = data["History"][0]
     for message in data["History"]:
         user_message += f"\n{message}"
-    user_message += f"\nАргумент защитника:\n{data['UserInput']}"
+    user_message += f"\nАргумент защитника:\n{data['UserInput']}\nТы должен продолжать обвинять его в краже и предоставлять аргументы."
     return user_message
 
 
@@ -53,21 +54,25 @@ def get_judgement_prompt(data: dict):
     user_message = data["History"][0]
     for message in data["History"]:
         user_message += f"\n{message}"
-    user_message += f"\nПредоставь решение на основе предоставленной информации."
+    user_message += "\nПредоставь решение на основе предоставленной информации."
     return user_message
 
 
-def dataset_to_json(dataset, filename):
+def dataset_to_json(data, filename):
     json_objects = []
-    system = dataset["system"]
-    dataset = dataset["examples"]
+    system = data["system"]
+    dataset = data["examples_phone"]
 
     with open(filename, "w", encoding="utf-8") as file:
         file.write("")
 
     for row in dataset.keys():
-        system_message = system
-        user_message = get_user_prompt(dataset[row]["prompt"])
+        if dataset[row]["prompt"]["system_prompt"] == "Судья":
+            user_message = get_judgement_prompt(dataset[row]["prompt"])
+            system_message = data["system_judge"]
+        else:
+            system_message = system
+            user_message = get_user_prompt(dataset[row]["prompt"])
         # user_message = str(dataset[row]['prompt'])
         bot_message = str(dataset[row]["answer"])
 
