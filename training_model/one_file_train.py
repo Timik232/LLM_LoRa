@@ -1,3 +1,4 @@
+"""Main file for model training"""
 import functools
 import gc
 import json
@@ -7,11 +8,13 @@ import shutil
 import subprocess
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
+from typing import Dict, Generator, Tuple
 
 # from typing import Any, Dict, List, Union
 # import numpy as np
 import requests
 import torch
+from datasets import Dataset
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 from peft import LoraConfig, PeftModel, get_peft_model
@@ -32,8 +35,15 @@ from .utils import dataset_to_json, tokens_init
 
 
 @contextmanager
-def change_dir(destination: str):
-    """Контекстный менеджер для временной смены рабочей директории."""
+def change_dir(destination: str) -> Generator[None, None, None]:
+    """Context manager for temporarily changing the working directory.
+
+    Args:
+        destination (str): Path to the target directory
+
+    Yields:
+        None: Enters the target directory during context execution
+    """
     current_dir = os.getcwd()
     os.chdir(destination)
     try:
@@ -42,8 +52,16 @@ def change_dir(destination: str):
         os.chdir(current_dir)
 
 
-def generate_prompt(tokenizer, data_point: dict) -> str:
-    """generate template for the model"""
+def generate_prompt(tokenizer: AutoTokenizer, data_point: Dict[str, str]) -> str:
+    """Generate a chat template prompt for the model.
+
+    Args:
+        tokenizer (AutoTokenizer): Hugging Face tokenizer
+        data_point (Dict[str, str]): Dictionary containing system, user and bot messages
+
+    Returns:
+        str: Formatted chat prompt
+    """
     return tokenizer.apply_chat_template(
         [
             {"role": "system", "content": data_point["system"]},
@@ -54,7 +72,19 @@ def generate_prompt(tokenizer, data_point: dict) -> str:
     )
 
 
-def tokenize(tokenizer, cutoff_len: int, prompt: str):
+def tokenize(
+    tokenizer: AutoTokenizer, cutoff_len: int, prompt: str
+) -> Dict[str, torch.Tensor]:
+    """Tokenize text with specified length constraints.
+
+    Args:
+        tokenizer (AutoTokenizer): Hugging Face tokenizer
+        cutoff_len (int): Maximum sequence length
+        prompt (str): Text to tokenize
+
+    Returns:
+        Dict[str, torch.Tensor]: Tokenized output dictionary
+    """
     return tokenizer(
         prompt,
         truncation=True,
@@ -66,10 +96,20 @@ def tokenize(tokenizer, cutoff_len: int, prompt: str):
 
 
 def generate_and_tokenize_prompt(
-    data_point,
-    tokenizer,
+    data_point: Dict[str, str],
+    tokenizer: AutoTokenizer,
     cutoff: int,
-):
+) -> Dict[str, torch.Tensor]:
+    """Generate and tokenize a complete prompt.
+
+    Args:
+        data_point (Dict[str, str]): Dictionary containing conversation data
+        tokenizer (AutoTokenizer): Hugging Face tokenizer
+        cutoff (int): Maximum sequence length
+
+    Returns:
+        Dict[str, torch.Tensor]: Tokenized prompt dictionary
+    """
     full_prompt = generate_prompt(tokenizer, data_point)
     tokenized_full_prompt = tokenize(
         tokenizer,
@@ -79,7 +119,18 @@ def generate_and_tokenize_prompt(
     return tokenized_full_prompt
 
 
-def data_preparation(cfg: DictConfig, tokenizer: AutoTokenizer):
+def data_preparation(
+    cfg: DictConfig, tokenizer: AutoTokenizer
+) -> Tuple[Dataset, Dataset]:
+    """Prepare and preprocess training and validation datasets.
+
+    Args:
+        cfg (DictConfig): Configuration object
+        tokenizer (AutoTokenizer): Hugging Face tokenizer
+
+    Returns:
+        Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
+    """
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
     with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
@@ -112,7 +163,14 @@ def data_preparation(cfg: DictConfig, tokenizer: AutoTokenizer):
     return train_data, val_data
 
 
-def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str):
+def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str) -> None:
+    """Merge base model with adapter weights and save the result.
+
+    Args:
+        cfg (DictConfig): Configuration object
+        steps (int): Training step number for checkpoint selection
+        save_path (str): Path to save merged model
+    """
     model_path = cfg.model.model_name
     adapter_path = f"{cfg.model.new_model}/checkpoint-{steps}"
     model = AutoModelForCausalLM.from_pretrained(
@@ -130,7 +188,15 @@ def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str):
     logging.info("Model merged")
 
 
-def train(cfg: DictConfig):
+def train(cfg: DictConfig) -> int:
+    """Execute full training pipeline.
+
+    Args:
+        cfg (DictConfig): Configuration object
+
+    Returns:
+        int: Number of global training steps completed
+    """
     tokens_init(cfg)
     torch_dtype = (
         getattr(torch, cfg.model.torch_dtype)
@@ -226,7 +292,7 @@ def train(cfg: DictConfig):
     )
     trainer.train()
     logging.info("Model trained")
-    global_steps = trainer.state.global_step
+    global_steps: int = trainer.state.global_step
     merged_model = model.merge_and_unload()
     merged_model.save_pretrained(cfg.paths.output_dir)
     tokenizer.save_pretrained(cfg.paths.output_dir)
@@ -238,9 +304,24 @@ def train(cfg: DictConfig):
 
 
 def convert_to_gguf(
-    model_path: str, outfile: str, python_exe: str, outtype: str, cfg: DictConfig
-):
-    """Convert model to GGUF format with config-based paths"""
+    model_path: str,
+    outfile: str,
+    python_exe: str,
+    outtype: str,
+    cfg: DictConfig,
+) -> None:
+    """Convert Hugging Face model to GGUF format.
+
+    Args:
+        model_path (str): Path to input model directory
+        outfile (str): Output file path
+        python_exe (str): Python executable path
+        outtype (str): Output type specification
+        cfg (DictConfig): Configuration object
+
+    Raises:
+        FileNotFoundError: If required paths are missing
+    """
     try:
         llama_cpp_dir = os.path.abspath(cfg.paths.llama_cpp_dir)
         conversion_script = os.path.join(llama_cpp_dir, "convert_hf_to_gguf.py")
@@ -280,12 +361,21 @@ def convert_to_gguf(
 def quantize_model(
     model_path: str,
     outfile: str,
-    qtype="q4_0",
-    llama_cpp_path=".",
-    quantized_path="llama-quantize.exe",
-):
-    """
-    Квантование модели с помощью инструмента llama-quantize.exe.
+    qtype: str = "q4_0",
+    llama_cpp_path: str = ".",
+    quantized_path: str = "llama-quantize.exe",
+) -> bool:
+    """Quantize GGUF model using llama.cpp quantizer.
+
+    Args:
+        model_path (str): Path to input GGUF model
+        outfile (str): Path for quantized output
+        qtype (str): Quantization type (default: q4_0)
+        llama_cpp_path (str): Path to llama.cpp directory
+        quantized_path (str): Name of quantizer executable
+
+    Returns:
+        bool: True if quantization succeeded, False otherwise
     """
     llama_cpp_dir = os.path.abspath(llama_cpp_path)
     llama_quantize_path = os.path.join(llama_cpp_dir, quantized_path)
@@ -314,13 +404,30 @@ def quantize_model(
     return True
 
 
-def copy_data(file: str, version="v1", destination=r"T:\lm-studio\models\game-model"):
+def copy_data(
+    file: str, version: str = "v1", destination: str = r"T:\lm-studio\models\game-model"
+) -> None:
+    """Move file to destination directory with versioning.
+
+    Args:
+        file (str): Source file name
+        version (str): Version subdirectory
+        destination (str): Root destination directory
+    """
     destination_path = os.path.join(destination, version, file)
     os.makedirs(os.path.dirname(destination_path), exist_ok=True)
     shutil.move(os.path.join(os.getcwd(), file), destination_path)
 
 
-def train_pipeline(cfg: DictConfig):
+def train_pipeline(cfg: DictConfig) -> None:
+    """Execute complete training pipeline including conversion and quantization.
+
+    Args:
+        cfg (DictConfig): Configuration object
+
+    Raises:
+        RuntimeError: If quantization step fails
+    """
     try:
         steps = train(cfg)
 
@@ -364,14 +471,21 @@ def train_pipeline(cfg: DictConfig):
         torch.cuda.empty_cache()
 
 
-def main_train(data_dir: str, cfg: DictConfig):
+def main_train(data_dir: str, cfg: DictConfig) -> None:
+    """Main training entry point with dataset processing.
+
+    Args:
+        data_dir (str): Directory containing training data
+        cfg (DictConfig): Configuration object
+    """
     train_pipeline(cfg)
     with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
     dataset_to_json(test_dataset, "../test.json")
 
 
-def post_new_dataset():
+def post_new_dataset() -> None:
+    """Upload new dataset version to remote server."""
     url = "https://dataset.ser13volk.me/dataset_ru"
     with open(os.path.join("../data", "dataset_ru.json"), "rb") as f:
         files = {"file": f}

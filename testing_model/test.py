@@ -1,19 +1,32 @@
+"""File for testing llm model"""
+
 import json
 import logging
+from typing import Any, Dict, List
 
 import requests
 from omegaconf import DictConfig
-
-# from .deepeval import test_mention_number_of_values
-from training_model.utils import get_user_prompt
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import GuidedDecodingParams
 
 # from .deepeval import test_mention_number_of_values
+from training_model.utils import get_user_prompt
+
+# from .deepeval import test_mention_number_of_values
 
 
-def dataset_to_json_for_test(dataset, filename):
-    json_objects = []
+def dataset_to_json_for_test(dataset: Dict[str, Any], filename: str) -> None:
+    """
+    Convert a dataset to a JSON file for testing purposes.
+
+    Args:
+        dataset (Dict[str, Any]): The dataset containing system and example information.
+        filename (str): The path to the output JSON file.
+
+    Returns:
+        None
+    """
+    json_objects: List[Dict[str, str]] = []
     system = dataset["system"]
     dataset = dataset["examples"]
 
@@ -38,15 +51,29 @@ def dataset_to_json_for_test(dataset, filename):
         file.write(json.dumps(json_objects, indent=4, ensure_ascii=False))
 
 
-def sanity_check(llm_url: str, prompts_to_check: list, answers: list):
-    pass
-
-
 def test_via_lmstudio(
-    cfg: DictConfig, test_dataset="data/test_ru.json", test_file="test.json"
-):
+    cfg: DictConfig,
+    path_test_dataset: str = "data/test_ru.json",
+    test_file: str = "test.json",
+) -> None:
+    """
+    Test the LLM via LM Studio by comparing model responses with expected answers.
+
+    Args:
+        cfg (DictConfig): Configuration dictionary containing model settings.
+        test_dataset (str, optional): Path to the test dataset JSON file.
+            Defaults to "data/test_ru.json".
+        test_file (str, optional): Path to save the processed test file.
+            Defaults to "test.json".
+
+    Returns:
+        None
+
+    Raises:
+        Logs errors for failed tests and prints accuracy metrics.
+    """
     llm_url = "http://localhost:1234/v1/chat/completions"
-    with open(test_dataset, "r", encoding="utf-8") as file:
+    with open(path_test_dataset, "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
     dataset_to_json_for_test(test_dataset, test_file)
     with open(test_file, "r", encoding="utf-8") as f:
@@ -91,13 +118,24 @@ def test_via_lmstudio(
     )
 
 
-def test_via_vllm(llm: LLM, test_dataset="data/test_ru.json", test_file="test.json"):
+def test_via_vllm(
+    llm: LLM, test_dataset: str = "data/test_ru.json", test_file: str = "test.json"
+) -> None:
     """
-    Test the model using the test dataset.
-    :param llm: LLM model
-    :param test_dataset: path to the test dataset
-    :param test_file: path to the test file after converting the test dataset
-    :return: None
+    Test the LLM via LM Studio by comparing model responses with expected answers.
+
+    Args:
+        cfg (DictConfig): Configuration dictionary containing model settings.
+        test_dataset (str, optional): Path to the test dataset JSON file.
+            Defaults to "data/test_ru.json".
+        test_file (str, optional): Path to save the processed test file.
+            Defaults to "test.json".
+
+    Returns:
+        None
+
+    Raises:
+        Logs errors for failed tests and prints accuracy metrics.
     """
     json_schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",

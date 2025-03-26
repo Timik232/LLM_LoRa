@@ -1,10 +1,12 @@
+"""Additional functions for the training_model module."""
 import json
+from typing import Any, Dict, List
 
+from huggingface_hub import login
 from omegaconf import DictConfig, OmegaConf
 
-# from dataclasses import dataclass
-# import torch
 import wandb
+from wandb.sdk.wandb_run import Run
 
 from .private_api import WANB_API
 
@@ -23,10 +25,18 @@ from .private_api import WANB_API
 #     train_steps = 60
 
 
-def tokens_init(cfg: DictConfig):
-    # hf_token = HUGGING_FACE_API
-    #
-    # login(token=hf_token)
+def tokens_init(cfg: DictConfig) -> Run:
+    """Initialize Weights & Biases logging and configure authentication.
+
+    Args:
+        cfg (DictConfig): Configuration object with training parameters
+
+    Returns:
+        Run: Initialized Weights & Biases run object
+    """
+    if cfg.other.hf_login:
+        hf_token = cfg.other.hf_token
+        login(token=hf_token)
 
     # wb_token = user_secrets.get_secret("wandb_api_key")
     wb_token = WANB_API
@@ -41,7 +51,18 @@ def tokens_init(cfg: DictConfig):
     return run
 
 
-def get_user_prompt(data):
+def get_user_prompt(data: Dict[str, Any]) -> str:
+    """Construct user prompt from conversation data.
+
+    Args:
+        data (Dict[str, Any]): Dictionary containing conversation history and metadata:
+            - History: List of previous messages
+            - AvailableActions: List of available actions
+            - UserInput: Current user input
+
+    Returns:
+        str: Formatted prompt string with conversation context
+    """
     user_message = (
         "Системное сообщение, которому ты должен следовать, отмечено словом 'system'. "
         "Предыдущие сообщения пользователя отмечены словом 'user'. Твои предыдущие сообщения отмечены словом 'VIKA'. "
@@ -54,7 +75,18 @@ def get_user_prompt(data):
     return user_message
 
 
-def dataset_to_json(dataset, filename):
+def dataset_to_json(dataset: Dict[str, Any], filename: str) -> List[Dict[str, str]]:
+    """Convert dataset to JSON format and save to file.
+
+    Args:
+        dataset (Dict[str, Any]): Source dataset dictionary containing:
+            - system: System prompt template
+            - examples: Dictionary of conversation examples
+        filename (str): Output file path
+
+    Returns:
+        List[Dict[str, str]]: List of generated JSON objects with conversation data
+    """
     json_objects = []
     system = dataset["system"]
     dataset = dataset["examples"]

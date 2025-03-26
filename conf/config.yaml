@@ -54,6 +54,8 @@ paths:
 
 other:
   cutoff_len: 2048
+  hf_login: false
+  hf_token: "INSERT YOUR HUGGING FACE TOKEN HERE"
 
 hydra:
   run:
