@@ -6,13 +6,31 @@ from typing import Any, Dict, List
 
 import requests
 from omegaconf import DictConfig
+
+# from .deepeval import test_mention_number_of_values
+from pydantic import BaseModel, ConfigDict, Field
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import GuidedDecodingParams
 
 # from .deepeval import test_mention_number_of_values
 from training_model.utils import get_user_prompt
 
-# from .deepeval import test_mention_number_of_values
+
+class Content(BaseModel):
+    """The inner element of the pydantic schema for testing model"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    Action: str = Field(..., description="The action associated with the message.")
+
+
+class MainModel(BaseModel):
+    """Pydantic schema for testing model"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    MessageText: str = Field(..., description="The text of the message.")
+    Content: Content
 
 
 def dataset_to_json_for_test(dataset: Dict[str, Any], filename: str) -> None:
@@ -137,29 +155,7 @@ def test_via_vllm(
     Raises:
         Logs errors for failed tests and prints accuracy metrics.
     """
-    json_schema = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "type": "object",
-        "properties": {
-            "MessageText": {
-                "type": "string",
-                "description": "The text of the message.",
-            },
-            "Content": {
-                "type": "object",
-                "properties": {
-                    "Action": {
-                        "type": "string",
-                        "description": "The action associated with the message.",
-                    }
-                },
-                "required": ["Action"],
-                "additionalProperties": False,
-            },
-        },
-        "required": ["MessageText", "Content"],
-        "additionalProperties": False,
-    }
+    json_schema = MainModel.model_json_schema()
     guided_decoding_params = GuidedDecodingParams(json=json_schema)
     sampling_params = SamplingParams(guided_decoding=guided_decoding_params)
     with open(test_dataset, "r", encoding="utf-8") as file:

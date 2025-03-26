@@ -481,7 +481,7 @@ def main_train(data_dir: str, cfg: DictConfig) -> None:
     train_pipeline(cfg)
     with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
-    dataset_to_json(test_dataset, "../test.json")
+    dataset_to_json(test_dataset, cfg.testing.output_test_file)
 
 
 def post_new_dataset() -> None:

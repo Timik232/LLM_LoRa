@@ -16,7 +16,7 @@ hydra-core = ">=1.3.2,<2.0.0"
 requests = ">=2.32.3,<3.0.0"
 trl = ">=0.15.2,<0.16.0"
 deepeval = ">=2.5.2,<3.0.0"
-numpy = "==1.23.5"
+numpy = ">=1.23.5, <2.0.0"
 torchmetrics = ">=1.6.2,<2.0.0"
 mistralai = ">=1.5.2,<2.0.0"
 wandb = ">=0.18"
@@ -25,14 +25,16 @@ torch = { version = "2.6.0", source = "torch-cuda" }
 torchvision = { version = "0.21.0", source = "torch-cuda" }
 sentencepiece = "^0.2.0"
 huggingface-hub = "^0.29.3"
-types-requests = "^2.32.0.20250306"
-types-pyyaml = "^6.0.12.20250326"
+vllm = "^0.8.2"
+
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.1.0"
 black = "^25.1.0"
 sphinx = "^8.2.3"
 autodocsumm = "^0.2.14"
+types-requests = "^2.32.0.20250306"
+types-pyyaml = "^6.0.12.20250326"
 
 [[tool.poetry.source]]
 name = "torch-cuda"

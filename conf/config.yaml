@@ -57,6 +57,13 @@ other:
   hf_login: false
   hf_token: "INSERT YOUR HUGGING FACE TOKEN HERE"
 
+testing:
+  test: true
+  test_file: "data/test_ru.json"
+  output_test_file: "../test.json"
+  prompt_for_deepeval: "test_prompt"
+
+
 hydra:
   run:
     dir: .
