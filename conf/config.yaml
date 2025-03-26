@@ -44,10 +44,13 @@ training:
 paths:
   data_dir: "data"
   merged_model_path: "merged_model_fp16"
-  output_dir: "Llama-finetuned"
-  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
-  llama_cpp_dir: "llama.cpp"
-  lmstudio_path: "T:/lm-studio/models/game-model"
+  output_dir: "models"
+#  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+  venv_python_path: "python"
+  llama_cpp_dir: "../llama.cpp"
+#  lmstudio_path: "T:/lm-studio/models/game-model"
+  final_weights_path: "models"
+  quantized_path: "build/bin/llama-quantize"
 
 other:
   cutoff_len: 2048

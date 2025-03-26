@@ -7,21 +7,23 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = "==3.11"
-dependencies = [
-    "transformers (>=4.49.0,<5.0.0)",
-    "peft (>=0.14.0,<0.15.0)",
-    "hydra-core (>=1.3.2,<2.0.0)",
-    "requests (>=2.32.3,<3.0.0)",
-    "trl (>=0.15.2,<0.16.0)",
-    "deepeval (>=2.5.2,<3.0.0)",
-    "numpy (==1.23.5)",
-    "torch (>=2.6.0,<3.0.0)",
-    "torchmetrics (>=1.6.2,<2.0.0)",
+requires-python = ">=3.10, <=3.12"
 
-]
-
-[tool.poetry]
+[tool.poetry.dependencies]
+python = ">=3.10,<=3.12"
+transformers = ">=4.49.0,<5.0.0"
+peft = ">=0.14.0,<0.15.0"
+hydra-core = ">=1.3.2,<2.0.0"
+requests = ">=2.32.3,<3.0.0"
+trl = ">=0.15.2,<0.16.0"
+deepeval = ">=2.5.2,<3.0.0"
+numpy = "==1.23.5"
+torchmetrics = ">=1.6.2,<2.0.0"
+mistralai = ">=1.5.2,<2.0.0"
+wandb = ">=0.18"
+bitsandbytes = ">=0.45.3,<0.46.0"
+torch = { version = "2.6.0", source = "torch-cuda" }
+torchvision = { version = "0.21.0", source = "torch-cuda" }
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.1.0"
@@ -32,9 +34,6 @@ name = "torch-cuda"
 url = "https://download.pytorch.org/whl/cu118"
 priority = "explicit"
 
-
-[tool.poetry.dependencies]
-torch = {source = "torch-cuda"}
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

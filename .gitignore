@@ -180,3 +180,5 @@ train.json
 tlite7b-chat-vika
 yandex8b-chat-vika
 vikhr8b-chat-vika
+judge-model
+models/

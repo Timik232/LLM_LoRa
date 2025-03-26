@@ -277,12 +277,18 @@ def convert_to_gguf(
         )
 
 
-def quantize_model(model_path: str, outfile: str, qtype="q4_0", llama_cpp_path="."):
+def quantize_model(
+    model_path: str,
+    outfile: str,
+    qtype="q4_0",
+    llama_cpp_path=".",
+    quantized_path="llama-quantize.exe",
+):
     """
     Квантование модели с помощью инструмента llama-quantize.exe.
     """
     llama_cpp_dir = os.path.abspath(llama_cpp_path)
-    llama_quantize_path = os.path.join(llama_cpp_dir, "llama-quantize.exe")
+    llama_quantize_path = os.path.join(llama_cpp_dir, quantized_path)
     model_path = os.path.abspath(model_path)
     outfile = os.path.abspath(outfile)
     if not os.path.exists(llama_quantize_path):
@@ -338,8 +344,11 @@ def train_pipeline(cfg: DictConfig):
                 outfile=quantized_file,
                 qtype=cfg.model.qtype,
                 llama_cpp_path=os.path.abspath(cfg.paths.llama_cpp_dir),
+                quantized_path=cfg.paths.quantized_path,
             ):
-                copy_data(quantized_file, cfg.model.version, cfg.paths.lmstudio_path)
+                copy_data(
+                    quantized_file, cfg.model.version, cfg.paths.final_weights_path
+                )
                 if os.path.exists(quantized_file):
                     os.remove(quantized_file)
                     logging.info(f"Removed intermediate file: {quantized_file}")

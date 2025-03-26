@@ -9,7 +9,7 @@ from testing_model import test_via_lmstudio
 from training_model import configure_logging, main_train
 
 
-@hydra.main(version_base="1.1", config_path="training_model/conf", config_name="config")
+@hydra.main(version_base="1.1", config_path="conf", config_name="config")
 def main(cfg: DictConfig):
     configure_logging(logging.DEBUG)
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
