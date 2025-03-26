@@ -24,6 +24,7 @@ wandb = ">=0.18"
 bitsandbytes = ">=0.45.3,<0.46.0"
 torch = { version = "2.6.0", source = "torch-cuda" }
 torchvision = { version = "0.21.0", source = "torch-cuda" }
+sentencepiece = "^0.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.1.0"
