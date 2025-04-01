@@ -1,40 +1,58 @@
 [project]
 name = "llm-lora"
 version = "0.1.0"
-description = "Project for LoRa training"
+description = "Project for LLM training"
 authors = [
     {name = "Timur Komolov",email = "komolov.timurka@mail.ru"}
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = "==3.11"
-dependencies = [
-    "transformers (>=4.49.0,<5.0.0)",
-    "peft (>=0.14.0,<0.15.0)",
-    "hydra-core (>=1.3.2,<2.0.0)",
-    "requests (>=2.32.3,<3.0.0)",
-    "trl (>=0.15.2,<0.16.0)",
-    "deepeval (>=2.5.2,<3.0.0)",
-    "numpy (==1.23.5)",
-    "torch (>=2.6.0,<3.0.0)",
-    "torchmetrics (>=1.6.2,<2.0.0)",
+requires-python = ">=3.11, <=3.13"
 
-]
+[tool.poetry.dependencies]
+transformers = ">=4.49.0,<5.0.0"
+peft = ">=0.14.0,<0.15.0"
+hydra-core = ">=1.3.2,<2.0.0"
+requests = ">=2.32.3,<3.0.0"
+trl = ">=0.15.2,<0.16.0"
+deepeval = ">=2.5.2,<3.0.0"
+numpy = ">=1.23.5, <2.0.0"
+torchmetrics = ">=1.6.2,<2.0.0"
+mistralai = ">=1.5.2,<2.0.0"
+wandb = ">=0.18"
+bitsandbytes = ">=0.45.3,<0.46.0"
+torch = { version = "2.6.0", source = "torch-cuda" }
+torchvision = { version = "0.21.0", source = "torch-cuda" }
+sentencepiece = "^0.2.0"
+huggingface-hub = "^0.29.3"
+vllm = "^0.8.2"
+llama-cpp-python = {version = "^0.3.8", extras = ["cublas"] }
 
-[tool.poetry]
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.1.0"
 black = "^25.1.0"
+sphinx = "^8.2.3"
+autodocsumm = "^0.2.14"
+types-requests = "^2.32.0.20250306"
+types-pyyaml = "^6.0.12.20250326"
 
 [[tool.poetry.source]]
 name = "torch-cuda"
 url = "https://download.pytorch.org/whl/cu118"
 priority = "explicit"
 
+[[tool.poetry.source]]
+name = "llama-cpp-cuda"
+url = "https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/cu118"
+priority = "supplemental"
 
-[tool.poetry.dependencies]
-torch = {source = "torch-cuda"}
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry-auto-export]
+output = "requirements.txt"
+without_hashes = true
+without = ["dev"]

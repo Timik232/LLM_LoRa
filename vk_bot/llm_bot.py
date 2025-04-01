@@ -1,12 +1,15 @@
-import vk_api
-from private_api import PRIVATE_API
-from vk_api.longpoll import VkLongPoll, VkEventType
 import time
+
 import requests
+import vk_api
+from vk_api.longpoll import VkEventType, VkLongPoll
 from vk_api.utils import get_random_id
+
+from training_model.private_api import PRIVATE_API
+
 # from Llama2_model import chat_saiga, model
-from threading import Thread
-from llama31_model import chat_saiga, model
+from .llama31_model import chat_saiga, model
+
 
 def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
     try:
@@ -15,7 +18,7 @@ def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
             random_id=get_random_id(),
             message=msg,
             sticker_id=stiker,
-            attachment=attach
+            attachment=attach,
         )
     except BaseException as ex:
         print(ex)
@@ -29,13 +32,19 @@ def main():
             user_id = event.user_id
             if event.text:
                 if len(event.text) > 400:
-                    send_message(user_id, "Генерация может занимание много время, ожидание")
+                    send_message(
+                        user_id, "Генерация может занимание много время, ожидание"
+                    )
                 if len(users_generate) > 0 and user_id not in users_generate:
-                    send_message(user_id, "Генерация другой человек, ожидание больше обычного")
+                    send_message(
+                        user_id, "Генерация другой человек, ожидание больше обычного"
+                    )
                 if len(event.text) > 1200:
-                    send_message(user_id, "Текст слишком длинный, разрезание несколько частей")
+                    send_message(
+                        user_id, "Текст слишком длинный, разрезание несколько частей"
+                    )
                     continue
-                vk.messages.setActivity(peer_id=event.peer_id, type='typing')
+                vk.messages.setActivity(peer_id=event.peer_id, type="typing")
                 users_generate.append(user_id)
                 response = chat_saiga(event.text, model)
                 users_generate.remove(user_id)

@@ -1,0 +1,11 @@
+services:
+  llm_training:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_training
+    volumes:
+      - ./models:/training_model/models
+      - ./data:/training_model/data
+      - ./conf:/training_model/conf
+    runtime: nvidia
