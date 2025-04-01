@@ -5,14 +5,13 @@ import os
 import hydra
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
-from vllm import LLM
 
-from testing_model import test_via_vllm
+from testing_model import test_via_llamacpp
 from testing_model.test import dataset_to_json_for_test
 from training_model import configure_logging, main_train
 
 
-@hydra.main(version_base="1.1", config_path="conf", config_name="config")
+@hydra.main(version_base="1.1", config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     """
     Main entry point for model training and testing workflow.
@@ -40,14 +39,19 @@ def main(cfg: DictConfig) -> None:
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
     main_train(data_dir, cfg)
     if cfg.testing.test:
-        llm = LLM(model=cfg.paths.output_dir, task="generate")
         with open(cfg.testing.test_file, "r", encoding="utf-8") as file:
             test_dataset = json.load(file)
-        dataset_to_json_for_test(test_dataset, cfg.testing.output_test_fil)
-        test_via_vllm(
-            llm=llm,
+        dataset_to_json_for_test(test_dataset, cfg.testing.output_test_file)
+        path_to_llm = os.path.join(
+            cfg.paths.final_weights_path,
+            cfg.model.version,
+            cfg.model.new_model + ".gguf",
+        )
+        test_via_llamacpp(
+            model_path=path_to_llm,
             test_dataset=cfg.testing.test_file,
             test_file=cfg.testing.output_test_file,
+            temperature=0.7,
         )
 
 

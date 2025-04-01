@@ -2,9 +2,11 @@
 
 import json
 import logging
+import re
 from typing import Any, Dict, List
 
 import requests
+from llama_cpp import Llama
 from omegaconf import DictConfig
 
 # from .deepeval import test_mention_number_of_values
@@ -191,3 +193,143 @@ def test_via_vllm(
             logging.error(f"Test {number} failed")
 
     logging.info("accuracy: " + str(count / len(prompts_to_check)))
+
+
+def test_via_llamacpp(
+    model_path: str | bytes,
+    test_dataset: str = "data/test_ru.json",
+    test_file: str = "test.json",
+    n_gpu_layers: int = -1,
+    n_ctx: int = 2048,
+    temperature: float = 0.7,
+    max_tokens: int = 2048,
+) -> float:
+    """
+    Test a GGUF model via llama.cpp by comparing model responses with expected answers.
+
+    Args:
+        model_path (str | bytes): Path to the GGUF model file
+        test_dataset (str, optional): Path to the test dataset JSON file.
+            Defaults to "data/test_ru.json".
+        test_file (str, optional): Path to save the processed test file.
+            Defaults to "test.json".
+        n_gpu_layers (int, optional): Number of layers to offload to GPU.
+            Defaults to -1 (all layers).
+        n_ctx (int, optional): Context window size.
+            Defaults to 2048.
+        temperature (float, optional): Sampling temperature.
+            Defaults to 0.7.
+        max_tokens (int, optional): Maximum number of tokens to generate.
+            Defaults to 2048.
+
+    Returns:
+        float value of accuracy
+
+    Raises:
+        Logs errors for failed tests and prints accuracy metrics.
+    """
+    # Load the GGUF model
+    llm = Llama(model_path=model_path, n_gpu_layers=n_gpu_layers, n_ctx=n_ctx)
+
+    json_schema = MainModel.model_json_schema()
+
+    with open(test_dataset, "r", encoding="utf-8") as file:
+        test_dataset = json.load(file)
+
+    dataset_to_json_for_test(test_dataset, test_file)
+
+    with open(test_file, "r", encoding="utf-8") as f:
+        prompts = json.load(f)
+
+    prompts_to_check = [prompt["user"] for prompt in prompts]
+    answers = [
+        test_dataset["examples"][bot]["answer"]["Content"]["Action"]
+        for bot in test_dataset["examples"]
+    ]
+
+    logging.debug(f"Expected answers: {answers}")
+    logging.debug(f"Number of prompts: {len(prompts_to_check)}")
+
+    count = 0
+    results = []
+
+    for number, prompt in enumerate(prompts_to_check):
+        system_prompt = (
+            "Ты – помощник по имени ВИКА на заброшенной космической станции. "
+            "У тебя есть доступ к системам станции. "
+            "Отвечай только в формате JSON с ключами 'MessageText' и 'Content', "
+            "где Content содержит ключ 'Action' с одним из доступных тебе действий. "
+            f"Используй следующую JSON схему: {json.dumps(json_schema, ensure_ascii=False)} "
+            "Заканчивай ответ символом }."
+        )
+
+        formatted_prompt = (
+            f"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{prompt} [/INST]"
+        )
+
+        response = llm(
+            formatted_prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=["</s>"],
+        )
+
+        response_text = response["choices"][0]["text"]
+
+        json_match = re.search(r"(\{.*\})", response_text, re.DOTALL)
+        if json_match:
+            try:
+                json_response = json.loads(json_match.group(1))
+                predicted_action = json_response.get("Content", {}).get("Action")
+
+                result = {
+                    "prompt": prompt,
+                    "expected": answers[number],
+                    "predicted": predicted_action,
+                    "full_response": response_text,
+                    "passed": predicted_action == answers[number],
+                }
+                results.append(result)
+
+                if predicted_action == answers[number]:
+                    count += 1
+                    logging.info(f"Test {number} passed")
+                else:
+                    logging.error(f"Test {number} failed")
+                    logging.error(
+                        f"Expected: {answers[number]}, Got: {predicted_action}"
+                    )
+            except json.JSONDecodeError:
+                logging.error(f"Test {number} failed: Invalid JSON response")
+                logging.error(f"Response: {response_text}")
+                results.append(
+                    {
+                        "prompt": prompt,
+                        "expected": answers[number],
+                        "predicted": "ERROR: Invalid JSON",
+                        "full_response": response_text,
+                        "passed": False,
+                    }
+                )
+        else:
+            logging.error(f"Test {number} failed: No JSON found in response")
+            logging.error(f"Response: {response_text}")
+            results.append(
+                {
+                    "prompt": prompt,
+                    "expected": answers[number],
+                    "predicted": "ERROR: No JSON found",
+                    "full_response": response_text,
+                    "passed": False,
+                }
+            )
+
+    accuracy = count / len(prompts_to_check)
+    logging.info(f"Accuracy: {accuracy:.4f} ({count}/{len(prompts_to_check)})")
+
+    with open("test_results.json", "w", encoding="utf-8") as f:
+        json.dump(
+            {"accuracy": accuracy, "results": results}, f, ensure_ascii=False, indent=2
+        )
+
+    return accuracy

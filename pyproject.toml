@@ -7,7 +7,7 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.11, <=3.12"
+requires-python = ">=3.11, <=3.13"
 
 [tool.poetry.dependencies]
 transformers = ">=4.49.0,<5.0.0"
@@ -26,6 +26,7 @@ torchvision = { version = "0.21.0", source = "torch-cuda" }
 sentencepiece = "^0.2.0"
 huggingface-hub = "^0.29.3"
 vllm = "^0.8.2"
+llama-cpp-python = {version = "^0.3.8", extras = ["cublas"] }
 
 
 [tool.poetry.group.dev.dependencies]
@@ -40,6 +41,11 @@ types-pyyaml = "^6.0.12.20250326"
 name = "torch-cuda"
 url = "https://download.pytorch.org/whl/cu118"
 priority = "explicit"
+
+[[tool.poetry.source]]
+name = "llama-cpp-cuda"
+url = "https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/cu118"
+priority = "supplemental"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
