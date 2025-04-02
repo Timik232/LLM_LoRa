@@ -25,9 +25,9 @@ def ollama_generate(model_name: str, prompt: str, schema: Dict, options: Dict) -
     response = ollama.generate(
         model=model_name,
         prompt=prompt,
-        format="json",  # Instruct Ollama to output JSON
+        format="json",
         options=options,
-        schema=schema,  # Pass the JSON schema
+        schema=schema,
     )
     return json.loads(response["response"])
 

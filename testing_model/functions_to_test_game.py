@@ -1,5 +1,4 @@
 import json
-import logging
 from json import JSONDecodeError
 
 
@@ -27,11 +26,11 @@ def test_actions(_: str, model_answer: str, correct_answer: str):
         correct_action = correct_answer_dict["Content"]["Action"]
         assert predicted_action == correct_action, "Action doesn't match"
     except JSONDecodeError:
-        logging.error("Model answer or correct answer is not in JSON format")
-        raise AssertionError
+        error_msg = "Model answer or correct answer is not in JSON format"
+        raise AssertionError(error_msg)
     except KeyError:
-        logging.error("Model answer or correct answer doesn't have correct keys")
-        raise AssertionError
+        error_msg = "Model answer or correct answer doesn't have correct keys"
+        raise AssertionError(error_msg)
     except Exception as e:
-        logging.error(f"Error in test_actions: {e}")
-        raise AssertionError
+        error_msg = f"Error in test_actions: {e}"
+        raise AssertionError(error_msg)

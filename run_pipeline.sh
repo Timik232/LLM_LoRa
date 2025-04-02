@@ -21,7 +21,7 @@ done
 
 # 4. Create and push the model
 echo "=== Registering Model with Ollama ==="
-ollama create custom-model -f /models/custom_model/Modelfile
+ollama create custom-model -f /models/custom_model/Modelfile.custom_model
 
 # 5. Run tests
 echo "=== Running Integration Tests ==="

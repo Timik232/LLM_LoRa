@@ -6,7 +6,7 @@ import hydra
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 
-from testing_model import test_via_lmstudio
+from testing_model import test_llm
 from testing_model.test import dataset_to_json_for_test
 
 from . import configure_logging, main_train
@@ -44,7 +44,7 @@ def main(cfg: DictConfig) -> None:
             test_dataset = json.load(file)
         dataset_to_json_for_test(test_dataset, cfg.testing.output_test_file)
         input("Load model into lmstudio and press Enter to continue...")
-        test_via_lmstudio(
+        test_llm(
             cfg,
             path_test_dataset=cfg.testing.test_dataset,
             test_file=cfg.testing.output_test_file,

@@ -2,9 +2,11 @@
 
 import json
 import logging
+import os
 import re
 from typing import Any, Callable, Dict, List, Optional
 
+import ollama
 from llama_cpp import Llama
 from omegaconf import DictConfig
 from openai import OpenAI
@@ -14,6 +16,8 @@ from training_model.utils import get_user_prompt
 
 # from .deepeval_func import test_mention_number_of_values
 from .functions_to_test_game import test_actions
+
+ollama.base_url = "http://localhost:11434"
 
 
 class Content(BaseModel):
@@ -69,6 +73,27 @@ def dataset_to_json_for_test(dataset: Dict[str, Any], filename: str) -> None:
         file.write(json.dumps(json_objects, indent=4, ensure_ascii=False))
 
 
+def ollama_generate(model_name: str | bytes, prompt: str, schema: Dict) -> Dict:
+    """
+    Wrapper function to generate a response using Ollama's structured outputs.
+
+    Args:
+        model_name (str): The name of the model in Ollama.
+        prompt (str): The formatted prompt to send to the model.
+        schema (Dict): The JSON schema for the expected response.
+
+    Returns:
+        Dict: The parsed JSON response conforming to the schema.
+    """
+    response = ollama.generate(
+        model=model_name,
+        prompt=prompt,
+        format="json",
+        options={"schema": schema},
+    )
+    return json.loads(response["response"])
+
+
 def call_llm(prompt: str, model: str, client: OpenAI) -> str:
     """
     Sends a prompt to the LLM and returns its response as a dictionary.
@@ -96,6 +121,7 @@ def run_tests(
     test_dataset_path: str = "data/test_ru.json",
     test_file: str = "test.json",
     test_func: callable = None,
+    use_ollama: bool = False,
 ) -> None:
     """
     Runs tests by comparing the LLM responses with expected answers from a dataset.
@@ -109,6 +135,7 @@ def run_tests(
             Defaults to "test.json".
         test_func (callable, optional): Additional test function to execute on each result.
             This function should accept the user prompt, LLM's message text and the correct answer.
+        use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
 
     Returns:
         None
@@ -124,17 +151,26 @@ def run_tests(
     prompts_to_check = [prompt["user"] for prompt in prompts]
     expected_answers = [answer["bot"] for answer in prompts]
 
-    count = 0
     passed_test = 0
 
     for number in range(len(prompts_to_check)):
         prompt = prompts_to_check[number]
         correct_answer = expected_answers[number].strip()
-        model_answer = call_llm(
-            prompt,
-            client=client,
-            model=cfg.model.outfile,
-        ).strip()
+        if not use_ollama:
+            model_answer = call_llm(
+                prompt,
+                client=client,
+                model=cfg.model.outfile,
+            ).strip()
+        else:
+            schema = MainModel.model_json_schema()
+            model_answer = ollama_generate(
+                model_name=os.path.join(
+                    cfg.paths.output_dir + cfg.model.gguf_directory + cfg.model.outfile
+                ),
+                prompt=prompt,
+                schema=schema,
+            )
 
         if test_func is not None:
             try:
@@ -146,19 +182,19 @@ def run_tests(
                 )
 
     total_tests = len(prompts_to_check)
-    logging.info("Accuracy: " + str(count / total_tests))
     final_metric = passed_test / total_tests if total_tests > 0 else 0
     logging.info(
         f"Metrics: {final_metric:.2f} ({passed_test}/{total_tests} tests passed)"
     )
 
 
-def test_via_lmstudio(
+def test_llm(
     cfg: DictConfig,
     path_test_dataset: str = "data/test_ru.json",
     test_file: str = "test.json",
     test_func: Optional[List[Callable]] = None,
-    llm_url: str = "http://localhost:1234/v1/",
+    llm_url: Optional[str] = "http://localhost:1234/v1/",
+    use_ollama: bool = False,
 ) -> None:
     """
     Test the LLM via LM Studio by comparing model responses with expected answers.
@@ -171,6 +207,7 @@ def test_via_lmstudio(
             Defaults to "test.json".
         test_func (Optional[List[Callable]]): List of additional test functions to execute on each result.
         llm_url (str, optional): URL of the LLM service. Defaults to "http://localhost:1234/v1/".
+        use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
 
     Returns:
         None
@@ -188,6 +225,7 @@ def test_via_lmstudio(
             test_dataset_path=path_test_dataset,
             test_file=test_file,
             test_func=test,
+            use_ollama=use_ollama,
         )
 
 
