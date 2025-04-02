@@ -20,10 +20,10 @@ testing\_model.test module
    :show-inheritance:
    :undoc-members:
 
-testing\_model.vllm\-test module
+testing\_model.vllm\_test module
 --------------------------------
 
-.. automodule:: testing_model.vllm-test
+.. automodule:: testing_model.vllm_test
    :members:
    :show-inheritance:
    :undoc-members:
