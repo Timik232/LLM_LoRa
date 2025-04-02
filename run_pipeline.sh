@@ -6,11 +6,11 @@ python -m training_model
 
 # 2. Create Modelfile
 echo "=== Creating Modelfile ==="
+mkdir -p /models/custom_model
 cat > /models/custom_model/Modelfile.custom_model <<EOL
 FROM /models/custom_model/custom_model.gguf
 PARAMETER temperature 0.7
 EOL
-
 # 3. Wait for Ollama to be ready
 echo "=== Waiting for Ollama ==="
 while ! curl -s http://ollama:11434 > /dev/null; do
