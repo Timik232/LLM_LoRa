@@ -6,7 +6,7 @@ import hydra
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 
-from testing_model import test_via_llamacpp
+from testing_model import test_via_lmstudio
 from testing_model.test import dataset_to_json_for_test
 
 from . import configure_logging, main_train
@@ -39,20 +39,15 @@ def main(cfg: DictConfig) -> None:
     configure_logging(logging.DEBUG)
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
     main_train(data_dir, cfg)
-    if cfg.testing.test:
-        with open(cfg.testing.test_file, "r", encoding="utf-8") as file:
+    if cfg.testing.manual_lmstudio_test:
+        with open(cfg.testing.test_dataset, "r", encoding="utf-8") as file:
             test_dataset = json.load(file)
         dataset_to_json_for_test(test_dataset, cfg.testing.output_test_file)
-        path_to_llm = os.path.join(
-            cfg.paths.final_weights_path,
-            cfg.model.version,
-            cfg.model.outfile.replace(".gguf", f"{cfg.model.quant_postfix}.gguf"),
-        )
-        test_via_llamacpp(
-            model_path=path_to_llm,
-            test_dataset=cfg.testing.test_file,
+        input("Load model into lmstudio and press Enter to continue...")
+        test_via_lmstudio(
+            cfg,
+            path_test_dataset=cfg.testing.test_dataset,
             test_file=cfg.testing.output_test_file,
-            temperature=0.7,
         )
 
 

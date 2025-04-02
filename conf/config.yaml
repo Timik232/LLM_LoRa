@@ -5,19 +5,19 @@ defaults:
 
 
 model:
-  model_name: "yandex/YandexGPT-5-Lite-8B-instruct"
+  model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
   dataset_name: "data/dataset_ru.json"
   new_model: "vikhr8b-chat-vika"
   torch_dtype: "float16"
   attn_implementation: "eager"
   train_steps: 60
-  outfile: "model-game_v5.gguf"
-  quant_postfix: "_q4"
+  outfile: "custom_model.gguf" # if you change this, change the model in run_pipeline
   qtype: "q4_1"
-  version: "v5"
+  gguf_directory: "custom_model"
   lora_r: 16
   lora_alpha: 32
   lora_dropout: 0.1
+  use_8bit: false
 
 training:
   per_device_train_batch_size: 1
@@ -49,12 +49,13 @@ paths:
   data_dir: "data"
   merged_model_path: "merged_model_fp16"
   output_dir: "models"
-#  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
-  venv_python_path: "python"
-  llama_cpp_dir: "../llama.cpp"
-#  lmstudio_path: "T:/lm-studio/models/game-model"
+  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+#  venv_python_path: "python" # for local run write full path to the venv
+  llama_cpp_dir: "llama.cpp"
+  #  "T:/lm-studio/models/game-model"
   final_weights_path: "models"
-  quantized_path: "build/bin/llama-quantize"
+#  quantized_path: "build/bin/llama-quantize" # for local run path may be different
+  quantized_path: "llama-quantize.exe"
 
 other:
   cutoff_len: 2048
@@ -62,8 +63,9 @@ other:
   hf_token: "INSERT YOUR HUGGING FACE TOKEN HERE"
 
 testing:
+  manual_lmstudio_test: true # use only for local run
   test: true
-  test_file: "data/test_ru.json"
+  test_dataset: "data/test_ru.json"
   output_test_file: "../test.json"
   prompt_for_deepeval: "test_prompt"
 

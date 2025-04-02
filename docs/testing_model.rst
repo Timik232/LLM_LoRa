@@ -21,7 +21,6 @@ testing\_model.test module
    :undoc-members:
 
 
-
 Module contents
 ---------------
 

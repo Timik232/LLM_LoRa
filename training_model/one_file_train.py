@@ -204,17 +204,19 @@ def train(cfg: DictConfig) -> int:
         if isinstance(cfg.model.torch_dtype, str)
         else cfg.model.torch_dtype
     )
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch_dtype,
-        bnb_4bit_use_double_quant=True,
-    )
-    # bnb_config = BitsAndBytesConfig(
-    #     load_in_8bit=True,  # Основное изменение
-    #     llm_int8_threshold=6.0,  # Опционально: порог для квантизации
-    #     torch_dtype=torch_dtype,  # Сохраняем указание типа данных
-    # )
+    if not cfg.model.use_8bit:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch_dtype,
+            bnb_4bit_use_double_quant=True,
+        )
+    else:
+        bnb_config = BitsAndBytesConfig(
+            load_in_8bit=True,
+            llm_int8_threshold=6.0,
+            torch_dtype=torch_dtype,
+        )
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model.model_name,
         quantization_config=bnb_config,
@@ -414,16 +416,18 @@ def quantize_model(
 
 
 def copy_data(
-    file: str, version: str = "v1", destination: str = r"T:\lm-studio\models\game-model"
+    file: str,
+    gguf_directory: str = "v1",
+    destination: str = r"T:\lm-studio\models\game-model",
 ) -> None:
     """Move file to destination directory with versioning.
 
     Args:
         file (str): Source file name
-        version (str): Version subdirectory
+        gguf_directory (str): Version subdirectory
         destination (str): Root destination directory
     """
-    destination_path = os.path.join(destination, version, file)
+    destination_path = os.path.join(destination, gguf_directory, file)
     os.makedirs(os.path.dirname(destination_path), exist_ok=True)
     shutil.move(os.path.join(os.getcwd(), file), destination_path)
 
@@ -454,7 +458,7 @@ def train_pipeline(cfg: DictConfig) -> None:
             )
             logging.info(f"Converted to GGUF: {outfile}")
 
-            quantized_file = outfile.replace(".gguf", f"{cfg.model.quant_postfix}.gguf")
+            quantized_file = outfile
             if quantize_model(
                 model_path=os.path.join(merged_model_dir, outfile),
                 outfile=quantized_file,
@@ -463,7 +467,9 @@ def train_pipeline(cfg: DictConfig) -> None:
                 quantized_path=cfg.paths.quantized_path,
             ):
                 copy_data(
-                    quantized_file, cfg.model.version, cfg.paths.final_weights_path
+                    quantized_file,
+                    cfg.model.gguf_directory,
+                    cfg.paths.final_weights_path,
                 )
                 if os.path.exists(quantized_file):
                     os.remove(quantized_file)

@@ -1,4 +1,16 @@
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+      - ./models:/training_model/models
+    environment:
+      - OLLAMA_MODELS=/models
+    runtime: nvidia
+
   llm_training:
     build:
       context: .
@@ -8,4 +20,11 @@ services:
       - ./models:/training_model/models
       - ./data:/training_model/data
       - ./conf:/training_model/conf
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
     runtime: nvidia
+
+volumes:
+  ollama_models:
