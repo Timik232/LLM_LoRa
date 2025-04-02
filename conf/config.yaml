@@ -1,6 +1,3 @@
-# conf/config.yaml
-#defaults:
-#  - override /logging: default
 defaults:
   - _self_  # Add _self_ first to include the current config in composition
   - override hydra/job_logging: disabled  # Properly override Hydra's logging
@@ -8,7 +5,7 @@ defaults:
 
 
 model:
-  model_name: "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it"
+  model_name: "yandex/YandexGPT-5-Lite-8B-instruct"
   dataset_name: "data/dataset_ru.json"
   new_model: "vikhr8b-chat-vika"
   torch_dtype: "float16"

@@ -1,4 +1,4 @@
-from training_model import main
+from training_model.__main__ import main
 
 if __name__ == "__main__":
     main()

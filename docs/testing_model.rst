@@ -20,13 +20,6 @@ testing\_model.test module
    :show-inheritance:
    :undoc-members:
 
-testing\_model.vllm\-test module
---------------------------------
-
-.. automodule:: testing_model.vllm-test
-   :members:
-   :show-inheritance:
-   :undoc-members:
 
 Module contents
 ---------------

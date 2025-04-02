@@ -12,7 +12,6 @@ from omegaconf import DictConfig
 # from .deepeval import test_mention_number_of_values
 from pydantic import BaseModel, ConfigDict, Field
 
-#
 # from .deepeval import test_mention_number_of_values
 from training_model.utils import get_user_prompt
 

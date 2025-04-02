@@ -254,7 +254,7 @@ def train(cfg: DictConfig) -> int:
     train_data, val_data = data_preparation(cfg, tokenizer)
     logging.info("Data prepared")
     global_steps = 0
-    if cfg.model.use_sft:
+    if cfg.training.use_sft:
         sft_config = SFTConfig(
             output_dir=cfg.model.new_model,
             max_seq_length=cfg.training.max_seq_length,
@@ -298,7 +298,7 @@ def train(cfg: DictConfig) -> int:
     if cfg.training.use_grpo:
         grpo_train(model=model, tokenizer=tokenizer, cfg=cfg)
     if not cfg.training.use_grpo and not cfg.training.use_sft:
-        logging.warning("You doesn't train the model")
+        logging.warning("Model training not configured")
     else:
         logging.info("Model trained")
 

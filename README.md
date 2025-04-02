@@ -11,7 +11,7 @@ it may require a significant amount of video memory. To check if there is enough
 you can check this link: https://huggingface.co/spaces/Vokturz/can-it-run-llm
 ## Launch
 Training settings. The conf directory contains the file `config.yaml`, which allows you to configure
-the training parameters of the model. The parameters that you don't want to change are marked with comments. \
+the training parameters of the model. \
 <u>**Important!**</u> The image can take up to 70 GB of memory, this is due to the fact that the libraries for working with
 CUDA are quite heavy, as is the downloaded model. Make sure that there is enough space on your disk.
 In addition, if the container does not start, then you will need to download
@@ -51,7 +51,7 @@ bitsandbytes, что позволяет квантовать веса и опя�
 можно проверить по этой ссылке: https://huggingface.co/spaces/Vokturz/can-it-run-llm
 ## Запуск
 Настройки обучения. В директории conf находится файл `config.yaml`, который позволяет настроить
-параметры обучения модели. Параметры, которые нежелательно менять, помечены комментариями. \
+параметры обучения модели. \
 <u>**Важно!**</u> Образ может занимать до 70ГБ памяти, это связано с тем, что библиотеки для работы с
 CUDA достаточно тяжёлые, как и скачиваемая модель. Убедитесь, что на вашем диске достаточно места.
 Кроме того, если контейнер не запускается, то вам потребуется скачать
