@@ -1,5 +1,12 @@
 version: 2
 
+sphinx:
+  configuration: docs/conf.py
+  
+python:
+   install:
+     - requirements: docs/requirements.txt
+
 build:
   os: ubuntu-24.04
   tools:
@@ -8,11 +15,4 @@ build:
     pre_install:
       - pip install --upgrade pip
 
-python:
-  install:
-    - method: none
-    - requirements: docs/requirements.txt  
- 
 
-sphinx:
-  configuration: docs/conf.py
