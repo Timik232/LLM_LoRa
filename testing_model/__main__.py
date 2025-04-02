@@ -2,6 +2,7 @@ import json
 import logging
 
 import hydra
+import ollama
 from omegaconf import DictConfig
 
 from training_model import configure_logging
@@ -35,12 +36,13 @@ def test_main(cfg: DictConfig) -> None:
         with open(cfg.testing.test_dataset, "r", encoding="utf-8") as file:
             test_dataset = json.load(file)
         dataset_to_json_for_test(test_dataset, cfg.testing.output_test_file)
-        input("Load model into lmstudio and press Enter to continue...")
+        client = ollama.Client()
         test_llm(
             cfg,
             path_test_dataset=cfg.testing.test_dataset,
             test_file=cfg.testing.output_test_file,
             use_ollama=True,
+            ollama_client=client,
         )
 
 

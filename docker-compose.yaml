@@ -8,8 +8,13 @@ services:
       - ollama_models:/root/.ollama
       - ./models:/training_model/models
     environment:
-      - OLLAMA_MODELS=/models
+      - OLLAMA_MODELS=/training_model/models
     runtime: nvidia
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:11434" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   llm_training:
     build:

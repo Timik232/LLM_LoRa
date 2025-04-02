@@ -9,7 +9,6 @@ echo "=== Creating Modelfile ==="
 cat > /models/custom_model/Modelfile.custom_model <<EOL
 FROM /models/custom_model/custom_model.gguf
 PARAMETER temperature 0.7
-PARAMETER num_ctx 4096
 EOL
 
 # 3. Wait for Ollama to be ready

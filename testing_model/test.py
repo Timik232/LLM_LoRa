@@ -73,11 +73,14 @@ def dataset_to_json_for_test(dataset: Dict[str, Any], filename: str) -> None:
         file.write(json.dumps(json_objects, indent=4, ensure_ascii=False))
 
 
-def ollama_generate(model_name: str | bytes, prompt: str, schema: Dict) -> Dict:
+def ollama_generate(
+    client: ollama.Client, model_name: str | bytes, prompt: str, schema: Dict
+) -> Dict:
     """
     Wrapper function to generate a response using Ollama's structured outputs.
 
     Args:
+        client (ollama.Client): The Ollama client instance.
         model_name (str): The name of the model in Ollama.
         prompt (str): The formatted prompt to send to the model.
         schema (Dict): The JSON schema for the expected response.
@@ -85,7 +88,7 @@ def ollama_generate(model_name: str | bytes, prompt: str, schema: Dict) -> Dict:
     Returns:
         Dict: The parsed JSON response conforming to the schema.
     """
-    response = ollama.generate(
+    response = client.generate(
         model=model_name,
         prompt=prompt,
         format="json",
@@ -117,7 +120,7 @@ def call_llm(prompt: str, model: str, client: OpenAI) -> str:
 
 def run_tests(
     cfg: DictConfig,
-    client: OpenAI,
+    client: OpenAI | ollama.Client,
     test_dataset_path: str = "data/test_ru.json",
     test_file: str = "test.json",
     test_func: callable = None,
@@ -128,7 +131,7 @@ def run_tests(
 
     Args:
         cfg (DictConfig): Configuration with model settings.
-        client (OpenAI): OpenAI client for LLM interaction.
+        client (OpenAI | ollama.client): OpenAI or ollama client for LLM interaction.
         test_dataset_path (str, optional): Path to the test dataset JSON file.
             Defaults to "data/test_ru.json".
         test_file (str, optional): Path to save the processed test file.
@@ -165,6 +168,7 @@ def run_tests(
         else:
             schema = MainModel.model_json_schema()
             model_answer = ollama_generate(
+                client=client,
                 model_name=os.path.join(
                     cfg.paths.output_dir + cfg.model.gguf_directory + cfg.model.outfile
                 ),
@@ -195,6 +199,7 @@ def test_llm(
     test_func: Optional[List[Callable]] = None,
     llm_url: Optional[str] = "http://localhost:1234/v1/",
     use_ollama: bool = False,
+    ollama_client: Optional[ollama.Client] = None,
 ) -> None:
     """
     Test the LLM via LM Studio by comparing model responses with expected answers.
@@ -208,6 +213,7 @@ def test_llm(
         test_func (Optional[List[Callable]]): List of additional test functions to execute on each result.
         llm_url (str, optional): URL of the LLM service. Defaults to "http://localhost:1234/v1/".
         use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
+        ollama_client (Optional[ollama.Client]): Ollama client for connection
 
     Returns:
         None
@@ -217,7 +223,10 @@ def test_llm(
     """
     if test_func is None:
         test_func = [test_actions]
-    client = OpenAI(api_key="dummy", base_url=llm_url)
+    if ollama_client is None:
+        client = OpenAI(api_key="dummy", base_url=llm_url)
+    else:
+        client = ollama_client
     for test in test_func:
         run_tests(
             cfg=cfg,
