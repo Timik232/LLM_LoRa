@@ -113,10 +113,11 @@ def call_llm(prompt: str, model: str, client: OpenAI) -> str:
     response = client.chat.completions.create(
         model=model, messages=[{"role": "user", "content": prompt}]
     )
+    if not response.choices:
+        raise RuntimeError("No choices returned from OpenAI response")
     content = response.choices[0].message.content
     model_answer = content
     return model_answer
-
 
 def run_tests(
     cfg: DictConfig,
