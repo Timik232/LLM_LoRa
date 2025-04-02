@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -33,14 +33,11 @@ COPY data ./data
 COPY main.py .
 
 WORKDIR /llama.cpp
-RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
-    cmake -B build && \
-    cmake --build build --config Release
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
+    git clone https://github.com/ggml-org/llama.cpp.git . && \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH cmake -B build -DGGML_CUDA=ON && \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH cmake --build build --config Release
 
 WORKDIR /training_model
-COPY run_pipeline.sh .
 
-RUN chmod +x run_pipeline.sh
-
-CMD ["./run_pipeline.sh"]
-#CMD python -m training_model
+CMD python -m training_model
