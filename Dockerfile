@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -33,7 +33,7 @@ COPY main.py .
 
 WORKDIR /llama.cpp
 RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
-    cmake -B build && \
+    cmake -B build -DGGML_CUDA=ON && \
     cmake --build build --config Release
 
 WORKDIR /training_model

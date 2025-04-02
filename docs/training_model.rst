@@ -36,6 +36,14 @@ training\_model.utils module
    :show-inheritance:
    :undoc-members:
 
+training\_model.grpo_train module
+---------------------------------
+
+.. automodule:: training_model.grpo_train
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 Module contents
 ---------------
 

@@ -42,10 +42,6 @@ name = "torch-cuda"
 url = "https://download.pytorch.org/whl/cu118"
 priority = "explicit"
 
-[[tool.poetry.source]]
-name = "llama-cpp-cuda"
-url = "https://jllllll.github.io/llama-cpp-python-cuBLAS-wheels/cu118"
-priority = "supplemental"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

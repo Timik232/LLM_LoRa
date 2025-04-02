@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 from llama_cpp import Llama
@@ -11,9 +11,8 @@ from omegaconf import DictConfig
 
 # from .deepeval import test_mention_number_of_values
 from pydantic import BaseModel, ConfigDict, Field
-from vllm import LLM, SamplingParams
-from vllm.sampling_params import GuidedDecodingParams
 
+#
 # from .deepeval import test_mention_number_of_values
 from training_model.utils import get_user_prompt
 
@@ -138,61 +137,84 @@ def test_via_lmstudio(
     )
 
 
-def test_via_vllm(
-    llm: LLM, test_dataset: str = "data/test_ru.json", test_file: str = "test.json"
-) -> None:
+def execute_test(
+    llm,
+    system_prompt: str,
+    prompt: str,
+    expected_answer: str,
+    max_tokens: int,
+    temperature: float,
+    json_schema: dict,
+) -> tuple[dict, bool]:
     """
-    Test the LLM via LM Studio by comparing model responses with expected answers.
+    Выполняет тест для одного запроса.
 
     Args:
-        cfg (DictConfig): Configuration dictionary containing model settings.
-        test_dataset (str, optional): Path to the test dataset JSON file.
-            Defaults to "data/test_ru.json".
-        test_file (str, optional): Path to save the processed test file.
-            Defaults to "test.json".
+        llm: Модель для генерации ответов.
+        system_prompt (str): Системный промпт с инструкциями.
+        prompt (str): Пользовательский запрос.
+        expected_answer (str): Ожидаемый результат.
+        max_tokens (int): Максимальное число генерируемых токенов.
+        temperature (float): Параметр температуры для генерации.
+        json_schema (dict): JSON схема для формата ответа.
 
     Returns:
-        None
-
-    Raises:
-        Logs errors for failed tests and prints accuracy metrics.
+        tuple: Кортеж, содержащий словарь с результатами теста и булевое значение (True, если тест пройден).
     """
-    json_schema = MainModel.model_json_schema()
-    guided_decoding_params = GuidedDecodingParams(json=json_schema)
-    sampling_params = SamplingParams(guided_decoding=guided_decoding_params)
-    with open(test_dataset, "r", encoding="utf-8") as file:
-        test_dataset = json.load(file)
-    dataset_to_json_for_test(test_dataset, test_file)
-    with open(test_file, "r", encoding="utf-8") as f:
-        prompts = json.load(f)
-    prompts_to_check = [prompt["user"] for prompt in prompts]
-    answers = [
-        test_dataset["examples"][bot]["answer"]["Content"]["Action"]
-        for bot in test_dataset["examples"]
-    ]
-    logging.debug(answers)
-    logging.debug(len(prompts_to_check))
-    count = 0
-    for number, prompt in enumerate(prompts_to_check):
-        data = [
-            {
-                "role": "system",
-                "content": "Ты – помощник по имени ВИКА на заброшенной космической станции. У тебя есть доступ к системам станции. Отвечай только в формате JSON с ключами 'MessageText' и 'Actions', содержащими как минимум одно (или несколько) доступных вам действий. Если в Actions есть имя действия, оно будет исполнено. Заканчивайте ответ символом }. Ниже – история сообщений из предыдущего диалога с пользователем, а также список доступных тебе действий.",
-            },
-            {"role": "user", "content": prompt},
-        ]
-        response = llm.chat(messages=data, sampling_params=sampling_params)
-        logging.debug(response[0].outputs[0].text)
-        if (
-            json.loads(response[0].outputs[0].text)["Content"]["Action"]
-            == answers[number]
-        ):
-            count += 1
-            logging.info(f"Test {number} passed")
-        else:
-            logging.error(f"Test {number} failed")
+    formatted_prompt = f"[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{prompt} [/INST]"
 
-    logging.info("accuracy: " + str(count / len(prompts_to_check)))
+    response = llm(
+        formatted_prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        stop=["</s>"],
+    )
+    response_text = response["choices"][0]["text"]
+
+    json_match = re.search(r"(\{.*\})", response_text, re.DOTALL)
+    if json_match:
+        try:
+            json_response = json.loads(json_match.group(1))
+            predicted_action = json_response.get("Content", {}).get("Action")
+            passed = predicted_action == expected_answer
+
+            result = {
+                "prompt": prompt,
+                "expected": expected_answer,
+                "predicted": predicted_action,
+                "full_response": response_text,
+                "passed": passed,
+            }
+
+            if passed:
+                logging.info("Test passed")
+            else:
+                logging.error("Test failed")
+                logging.error(f"Expected: {expected_answer}, Got: {predicted_action}")
+        except json.JSONDecodeError:
+            logging.error("Test failed: Invalid JSON response")
+            logging.error(f"Response: {response_text}")
+            result = {
+                "prompt": prompt,
+                "expected": expected_answer,
+                "predicted": "ERROR: Invalid JSON",
+                "full_response": response_text,
+                "passed": False,
+            }
+            passed = False
+    else:
+        logging.error("Test failed: No JSON found in response")
+        logging.error(f"Response: {response_text}")
+        result = {
+            "prompt": prompt,
+            "expected": expected_answer,
+            "predicted": "ERROR: No JSON found",
+            "full_response": response_text,
+            "passed": False,
+        }
+        passed = False
+
+    return result, passed
 
 
 def test_via_llamacpp(
@@ -203,48 +225,49 @@ def test_via_llamacpp(
     n_ctx: int = 2048,
     temperature: float = 0.7,
     max_tokens: int = 2048,
+    test_func: Callable = execute_test,
+    system_prompt: Optional[str] = None,
 ) -> float:
     """
-    Test a GGUF model via llama.cpp by comparing model responses with expected answers.
+    Тестирование GGUF модели через llama.cpp с использованием передаваемой функции тестирования.
 
     Args:
-        model_path (str | bytes): Path to the GGUF model file
-        test_dataset (str, optional): Path to the test dataset JSON file.
-            Defaults to "data/test_ru.json".
-        test_file (str, optional): Path to save the processed test file.
-            Defaults to "test.json".
-        n_gpu_layers (int, optional): Number of layers to offload to GPU.
-            Defaults to -1 (all layers).
-        n_ctx (int, optional): Context window size.
-            Defaults to 2048.
-        temperature (float, optional): Sampling temperature.
-            Defaults to 0.7.
-        max_tokens (int, optional): Maximum number of tokens to generate.
-            Defaults to 2048.
+        model_path (str | bytes): Путь к файлу модели GGUF.
+        test_dataset (str, optional): Путь к JSON файлу с тестовыми данными.
+            По умолчанию "data/test_ru.json".
+        test_file (str, optional): Путь для сохранения обработанного тестового файла.
+            По умолчанию "test.json".
+        n_gpu_layers (int, optional): Количество слоёв для вычислений на GPU.
+            По умолчанию -1 (все слои).
+        n_ctx (int, optional): Размер окна контекста.
+            По умолчанию 2048.
+        temperature (float, optional): Температура сэмплинга.
+            По умолчанию 0.7.
+        max_tokens (int, optional): Максимальное количество генерируемых токенов.
+            По умолчанию 2048.
+        test_func (Callable): Функция, реализующая принцип тестирования.
+        system_prompt (Optional[str], optional): Системный промпт для модели.
 
     Returns:
-        float value of accuracy
-
-    Raises:
-        Logs errors for failed tests and prints accuracy metrics.
+        float: Значение точности (accuracy).
     """
-    # Load the GGUF model
-    llm = Llama(model_path=model_path, n_gpu_layers=n_gpu_layers, n_ctx=n_ctx)
-
+    llm = Llama(
+        model_path=model_path, n_gpu_layers=n_gpu_layers, n_ctx=n_ctx, verbose=True
+    )
     json_schema = MainModel.model_json_schema()
 
     with open(test_dataset, "r", encoding="utf-8") as file:
-        test_dataset = json.load(file)
+        test_dataset_data = json.load(file)
 
-    dataset_to_json_for_test(test_dataset, test_file)
+    dataset_to_json_for_test(test_dataset_data, test_file)
 
     with open(test_file, "r", encoding="utf-8") as f:
         prompts = json.load(f)
 
     prompts_to_check = [prompt["user"] for prompt in prompts]
     answers = [
-        test_dataset["examples"][bot]["answer"]["Content"]["Action"]
-        for bot in test_dataset["examples"]
+        test_dataset_data["examples"][bot]["answer"]["Content"]["Action"]
+        for bot in test_dataset_data["examples"]
     ]
 
     logging.debug(f"Expected answers: {answers}")
@@ -252,8 +275,7 @@ def test_via_llamacpp(
 
     count = 0
     results = []
-
-    for number, prompt in enumerate(prompts_to_check):
+    if system_prompt is None:
         system_prompt = (
             "Ты – помощник по имени ВИКА на заброшенной космической станции. "
             "У тебя есть доступ к системам станции. "
@@ -263,66 +285,22 @@ def test_via_llamacpp(
             "Заканчивай ответ символом }."
         )
 
-        formatted_prompt = (
-            f"<s>[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{prompt} [/INST]"
-        )
-
-        response = llm(
-            formatted_prompt,
+    for number, prompt in enumerate(prompts_to_check):
+        result, passed = test_func(
+            llm=llm,
+            system_prompt=system_prompt,
+            prompt=prompt,
+            expected_answer=answers[number],
             max_tokens=max_tokens,
             temperature=temperature,
-            stop=["</s>"],
+            json_schema=json_schema,
         )
-
-        response_text = response["choices"][0]["text"]
-
-        json_match = re.search(r"(\{.*\})", response_text, re.DOTALL)
-        if json_match:
-            try:
-                json_response = json.loads(json_match.group(1))
-                predicted_action = json_response.get("Content", {}).get("Action")
-
-                result = {
-                    "prompt": prompt,
-                    "expected": answers[number],
-                    "predicted": predicted_action,
-                    "full_response": response_text,
-                    "passed": predicted_action == answers[number],
-                }
-                results.append(result)
-
-                if predicted_action == answers[number]:
-                    count += 1
-                    logging.info(f"Test {number} passed")
-                else:
-                    logging.error(f"Test {number} failed")
-                    logging.error(
-                        f"Expected: {answers[number]}, Got: {predicted_action}"
-                    )
-            except json.JSONDecodeError:
-                logging.error(f"Test {number} failed: Invalid JSON response")
-                logging.error(f"Response: {response_text}")
-                results.append(
-                    {
-                        "prompt": prompt,
-                        "expected": answers[number],
-                        "predicted": "ERROR: Invalid JSON",
-                        "full_response": response_text,
-                        "passed": False,
-                    }
-                )
+        results.append(result)
+        if passed:
+            count += 1
+            logging.info(f"Test {number} passed")
         else:
-            logging.error(f"Test {number} failed: No JSON found in response")
-            logging.error(f"Response: {response_text}")
-            results.append(
-                {
-                    "prompt": prompt,
-                    "expected": answers[number],
-                    "predicted": "ERROR: No JSON found",
-                    "full_response": response_text,
-                    "passed": False,
-                }
-            )
+            logging.error(f"Test {number} failed")
 
     accuracy = count / len(prompts_to_check)
     logging.info(f"Accuracy: {accuracy:.4f} ({count}/{len(prompts_to_check)})")
