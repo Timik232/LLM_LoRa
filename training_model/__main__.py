@@ -8,7 +8,8 @@ from omegaconf import DictConfig
 
 from testing_model import test_via_llamacpp
 from testing_model.test import dataset_to_json_for_test
-from training_model import configure_logging, main_train
+
+from . import configure_logging, main_train
 
 
 @hydra.main(version_base="1.1", config_path="../conf", config_name="config")
@@ -45,7 +46,7 @@ def main(cfg: DictConfig) -> None:
         path_to_llm = os.path.join(
             cfg.paths.final_weights_path,
             cfg.model.version,
-            cfg.model.new_model + ".gguf",
+            cfg.model.outfile.replace(".gguf", f"{cfg.model.quant_postfix}.gguf"),
         )
         test_via_llamacpp(
             model_path=path_to_llm,

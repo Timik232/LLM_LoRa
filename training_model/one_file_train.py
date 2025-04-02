@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
-from typing import Dict, Generator, Tuple
+from typing import Callable, Dict, Generator, Tuple
 
 # from typing import Any, Dict, List, Union
 # import numpy as np
@@ -30,6 +30,7 @@ from trl import SFTConfig, SFTTrainer
 
 import wandb
 
+from .grpo_train import grpo_train
 from .logging_config import configure_logging
 from .utils import dataset_to_json, tokens_init
 
@@ -73,7 +74,7 @@ def generate_prompt(tokenizer: AutoTokenizer, data_point: Dict[str, str]) -> str
 
 
 def tokenize(
-    tokenizer: AutoTokenizer, cutoff_len: int, prompt: str
+    tokenizer: AutoTokenizer | Callable, cutoff_len: int, prompt: str
 ) -> Dict[str, torch.Tensor]:
     """Tokenize text with specified length constraints.
 
@@ -252,47 +253,55 @@ def train(cfg: DictConfig) -> int:
     model = get_peft_model(model, peft_config)
     train_data, val_data = data_preparation(cfg, tokenizer)
     logging.info("Data prepared")
-    sft_config = SFTConfig(
-        output_dir=cfg.model.new_model,
-        max_seq_length=cfg.training.max_seq_length,
-        dataset_kwargs={"skip_prepare_dataset": True},
-        packing=False,
-        run_name=cfg.model.new_model,
-        per_device_train_batch_size=cfg.training.per_device_train_batch_size,
-        per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
-        gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
-        gradient_checkpointing=cfg.training.gradient_checkpointing,
-        # max_steps=cfg.model.train_steps,
-        optim=cfg.training.optim,
-        num_train_epochs=cfg.training.num_train_epochs,
-        eval_strategy="steps",
-        eval_steps=cfg.training.eval_steps,
-        logging_steps=cfg.training.logging_steps,
-        warmup_steps=cfg.training.warmup_steps,
-        logging_strategy="steps",
-        learning_rate=cfg.training.learning_rate,
-        fp16=cfg.training.fp16,
-        bf16=cfg.training.bf16,
-        weight_decay=cfg.training.weight_decay,
-        neftune_noise_alpha=cfg.training.neftune_noise_alpha,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        group_by_length=True,
-        report_to="wandb",
-        save_total_limit=cfg.training.save_total_limit,
-        load_best_model_at_end=cfg.training.load_best,
-    )
+    global_steps = 0
+    if cfg.model.use_sft:
+        sft_config = SFTConfig(
+            output_dir=cfg.model.new_model,
+            max_seq_length=cfg.training.max_seq_length,
+            dataset_kwargs={"skip_prepare_dataset": True},
+            packing=False,
+            run_name=cfg.model.new_model,
+            per_device_train_batch_size=cfg.training.per_device_train_batch_size,
+            per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
+            gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
+            gradient_checkpointing=cfg.training.gradient_checkpointing,
+            # max_steps=cfg.model.train_steps,
+            optim=cfg.training.optim,
+            num_train_epochs=cfg.training.num_train_epochs,
+            eval_strategy="steps",
+            eval_steps=cfg.training.eval_steps,
+            logging_steps=cfg.training.logging_steps,
+            warmup_steps=cfg.training.warmup_steps,
+            logging_strategy="steps",
+            learning_rate=cfg.training.learning_rate,
+            fp16=cfg.training.fp16,
+            bf16=cfg.training.bf16,
+            weight_decay=cfg.training.weight_decay,
+            neftune_noise_alpha=cfg.training.neftune_noise_alpha,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
+            group_by_length=True,
+            report_to="wandb",
+            save_total_limit=cfg.training.save_total_limit,
+            load_best_model_at_end=cfg.training.load_best,
+        )
 
-    trainer = SFTTrainer(
-        model=model,
-        train_dataset=train_data,
-        eval_dataset=val_data,
-        peft_config=peft_config,
-        processing_class=tokenizer,
-        args=sft_config,
-    )
-    trainer.train()
-    logging.info("Model trained")
-    global_steps: int = trainer.state.global_step
+        trainer = SFTTrainer(
+            model=model,
+            train_dataset=train_data,
+            eval_dataset=val_data,
+            peft_config=peft_config,
+            processing_class=tokenizer,
+            args=sft_config,
+        )
+        trainer.train()
+        global_steps: int = trainer.state.global_step
+    if cfg.training.use_grpo:
+        grpo_train(model=model, tokenizer=tokenizer, cfg=cfg)
+    if not cfg.training.use_grpo and not cfg.training.use_sft:
+        logging.warning("You doesn't train the model")
+    else:
+        logging.info("Model trained")
+
     merged_model = model.merge_and_unload()
     merged_model.save_pretrained(cfg.paths.output_dir)
     tokenizer.save_pretrained(cfg.paths.output_dir)

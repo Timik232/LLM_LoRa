@@ -39,7 +39,14 @@ training:
   neftune_noise_alpha: 0
   gradient_checkpointing: true
   save_total_limit: 5
-  load_best: False
+  load_best: false
+  use_grpo: false
+  use_sft: true
+
+grpo:
+  val_data: "test_ru.json"
+  train_data: "dataset_ru.json"
+  max_completion_length: None
 
 paths:
   data_dir: "data"
