@@ -298,7 +298,7 @@ def train(cfg: DictConfig) -> int:
     if cfg.training.use_grpo:
         grpo_train(model=model, tokenizer=tokenizer, cfg=cfg)
     if not cfg.training.use_grpo and not cfg.training.use_sft:
-        logging.warning("You doesn't train the model")
+        logging.warning("Model training not configured")
     else:
         logging.info("Model trained")
 
