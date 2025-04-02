@@ -11,7 +11,8 @@ build:
 python:
   install:
     - method: pip
-      path: .  
+      path: .
+      options: --no-deps
     - requirements: docs/requirements.txt  
 
 sphinx:
