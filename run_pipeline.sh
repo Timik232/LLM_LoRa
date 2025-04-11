@@ -53,14 +53,20 @@ JSON_PAYLOAD=$(jq -n \
     '{name: $name, files: {
     "$gguf_file": $blob_name}}')
 
-curl -X POST http://ollama:11434/api/create \
+CREATE_RESPONSE=$(curl -X POST http://ollama:11434/api/create \
     -H "Content-Type: application/json" \
-    -d "$JSON_PAYLOAD"
+    -d "$JSON_PAYLOAD" \
+    -s -w "\n%{http_code}")
 
-if [ $? -eq 0 ]; then
+HTTP_CODE=$(echo "$CREATE_RESPONSE" | tail -n1)
+RESPONSE_BODY=$(echo "$CREATE_RESPONSE" | sed '$d')
+
+if [ $? -eq 0 ] && [ "$HTTP_CODE" -lt 400 ]; then
     echo "Model creation confirmed"
 else
     echo "Model creation failed"
+    echo "Response: $RESPONSE_BODY"
+    echo "HTTP Code: $HTTP_CODE"
     exit 1
 fi
 
