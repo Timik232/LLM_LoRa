@@ -39,6 +39,11 @@ poetry install --no-root
 ``
 Then you can run `main.py `and wait for the result.
 
+### Additional information
+The folder with the hydra config is synchronized with the docker container, so if you want to change
+the hyper-parameters, you can do it in the `conf` folder and not rebuild the container.
+The data in the `data` folder and the models after training are also synchronized with the `models` folder.
+
 # RU
 ## Вступление
 Этот репозиторий можно использовать для обучения модели языковой модели (LLM) в **json** или **csv** формате.
@@ -78,3 +83,8 @@ docker-compose up
 poetry install --no-root
 ```
 Затем можно запустить `main.py` и дождаться результата.
+
+### Дополнительная информация
+Папка с конфигом гидры синхронизируется с докер-контейнером, поэтому если вы хотите изменить
+гипер-параметры, то вы можете сделать это в папке `conf` и не пересобирать контейнер.
+Также синхронизируются данные в папке `data` и модели после обучения с папкой `models`.
