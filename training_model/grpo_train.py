@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Callable, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from datasets import Dataset
 from hydra.utils import get_original_cwd
@@ -12,7 +12,7 @@ from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTo
 from trl import GRPOConfig, GRPOTrainer
 
 
-def reward_function(completions: list, row: dict | str, **kwargs) -> list:
+def reward_function(prompts: List[str], completions: List[str], **kwargs) -> list:
     """Compute rewards for GRPO training based on action matching.
 
     Args:
@@ -22,6 +22,7 @@ def reward_function(completions: list, row: dict | str, **kwargs) -> list:
     Returns:
         list: List of reward values for each completion
     """
+    row = kwargs.get("row", None)
     if isinstance(row, str):
         row = json.loads(row)
     correct_actions = row["Content"]["Action"]

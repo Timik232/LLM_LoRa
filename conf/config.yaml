@@ -45,18 +45,19 @@ grpo:
   train_data: "dataset_ru.json"
   max_completion_length: None
   num_generations: 2
+  use_cache: false
 
 paths:
   data_dir: "data"
   merged_model_path: "merged_model_fp16"
   output_dir: "models" # if you change this, change the in run_pipeline
-  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
-#  venv_python_path: "python" # for local run write full path to the venv
-  llama_cpp_dir: "llama.cpp"
+#  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+  venv_python_path: "python" # for local run write full path to the venv
+  llama_cpp_dir: "../llama.cpp"
   #  "T:/lm-studio/models/game-model"
   final_weights_path: "models" # if you change this, change in run_pipeline
-#  quantized_path: "build/bin/llama-quantize" # for local run path may be different
-  quantized_path: "llama-quantize.exe"
+  quantized_path: "build/bin/llama-quantize" # for local run path may be different
+#  quantized_path: "llama-quantize.exe"
 
 other:
   cutoff_len: 2048
