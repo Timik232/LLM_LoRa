@@ -16,13 +16,14 @@ def reward_function(prompts: List[str], completions: List[str], **kwargs) -> lis
     """Compute rewards for GRPO training based on action matching.
 
     Args:
+        prompts (list): List of prompts for trl consistency
         completions (list): List of model-generated completions
-        row (dict): Dataset row containing 'correct_actions'
+        kwargs (dict): Dataset row containing 'correct_actions'
 
     Returns:
         list: List of reward values for each completion
     """
-    row = kwargs.get("row", None)
+    row = kwargs.get("row")
     if isinstance(row, str):
         row = json.loads(row)
     correct_actions = row["Content"]["Action"]

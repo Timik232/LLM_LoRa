@@ -109,6 +109,8 @@ def generate_and_tokenize_prompt(
         data_point (Dict[str, str]): Dictionary containing conversation data
         tokenizer (AutoTokenizer): Hugging Face tokenizer
         cutoff (int): Maximum sequence length
+        should_add_prompt (bool): used for grpo, when
+            needed dict with keyword "prompt" returned
 
     Returns:
         Dict[str, torch.Tensor]: Tokenized prompt dictionary
