@@ -5,16 +5,18 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional
 
-import requests
+import ollama
 from llama_cpp import Llama
 from omegaconf import DictConfig
-
-# from .deepeval import test_mention_number_of_values
+from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
-#
-# from .deepeval import test_mention_number_of_values
 from training_model.utils import get_user_prompt
+
+# from .deepeval_func import test_mention_number_of_values
+from .functions_to_test_game import test_actions
+
+ollama.base_url = "http://localhost:11434"
 
 
 class Content(BaseModel):
@@ -70,20 +72,147 @@ def dataset_to_json_for_test(dataset: Dict[str, Any], filename: str) -> None:
         file.write(json.dumps(json_objects, indent=4, ensure_ascii=False))
 
 
-def test_via_lmstudio(
+def ollama_generate(
+    client: ollama.Client, model_name: str | bytes, prompt: str, schema: Dict
+) -> Dict:
+    """
+    Wrapper function to generate a response using Ollama's structured outputs.
+
+    Args:
+        client (ollama.Client): The Ollama client instance.
+        model_name (str): The name of the model in Ollama.
+        prompt (str): The formatted prompt to send to the model.
+        schema (Dict): The JSON schema for the expected response.
+
+    Returns:
+        Dict: The parsed JSON response conforming to the schema.
+    """
+    response = client.generate(
+        model=model_name,
+        prompt=prompt,
+        format=schema,
+    )
+    logging.debug(response)
+    return response["response"]
+
+
+def call_llm(prompt: str, model: str, client: OpenAI) -> str:
+    """
+    Sends a prompt to the LLM and returns its response as a dictionary.
+
+    Args:
+        prompt (str): The user prompt.
+        model (str): The model identifier.
+        client (OpenAI): openai client for the llm.
+
+    Returns:
+        dict: Parsed LLM response.
+    """
+
+    response = client.chat.completions.create(
+        model=model, messages=[{"role": "user", "content": prompt}]
+    )
+    if not response.choices:
+        raise RuntimeError("No choices returned from OpenAI response")
+    content = response.choices[0].message.content
+    model_answer = content
+    return model_answer
+
+
+def run_tests(
+    cfg: DictConfig,
+    client: OpenAI | ollama.Client,
+    test_dataset_path: str = "data/test_ru.json",
+    test_file: str = "test.json",
+    test_func: callable = None,
+    use_ollama: bool = False,
+) -> None:
+    """
+    Runs tests by comparing the LLM responses with expected answers from a dataset.
+
+    Args:
+        cfg (DictConfig): Configuration with model settings.
+        client (OpenAI | ollama.client): OpenAI or ollama client for LLM interaction.
+        test_dataset_path (str, optional): Path to the test dataset JSON file.
+            Defaults to "data/test_ru.json".
+        test_file (str, optional): Path to save the processed test file.
+            Defaults to "test.json".
+        test_func (callable, optional): Additional test function to execute on each result.
+            This function should accept the user prompt, LLM's message text and the correct answer.
+        use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
+
+    Returns:
+        None
+    """
+    with open(test_dataset_path, "r", encoding="utf-8") as file:
+        test_dataset = json.load(file)
+
+    dataset_to_json_for_test(test_dataset, test_file)
+
+    with open(test_file, "r", encoding="utf-8") as f:
+        prompts = json.load(f)
+
+    prompts_to_check = [prompt["user"] for prompt in prompts]
+    expected_answers = [answer["bot"] for answer in prompts]
+
+    passed_test = 0
+
+    for number in range(len(prompts_to_check)):
+        prompt = prompts_to_check[number]
+        correct_answer = expected_answers[number].strip()
+        if not use_ollama:
+            model_answer = call_llm(
+                prompt,
+                client=client,
+                model=cfg.model.outfile,
+            ).strip()
+        else:
+            schema = MainModel.model_json_schema()
+            model_answer = ollama_generate(
+                client=client,
+                model_name=cfg.model.outfile.replace(".gguf", ""),
+                prompt=prompt,
+                schema=schema,
+            )
+
+        if test_func is not None:
+            try:
+                test_func(prompt, model_answer, correct_answer)
+                passed_test += 1
+            except AssertionError as e:
+                logging.error(
+                    f"Test failed for prompt: {prompt}.\n Error: {e}\nModel answer: {model_answer}\nExpected answer: {correct_answer}\n"
+                )
+
+    total_tests = len(prompts_to_check)
+    final_metric = passed_test / total_tests if total_tests > 0 else 0
+    logging.info(
+        f"Metrics: {final_metric:.2f} ({passed_test}/{total_tests} tests passed)"
+    )
+
+
+def test_llm(
     cfg: DictConfig,
     path_test_dataset: str = "data/test_ru.json",
     test_file: str = "test.json",
+    test_func: Optional[List[Callable]] = None,
+    llm_url: Optional[str] = "http://localhost:1234/v1/",
+    use_ollama: bool = False,
+    ollama_client: Optional[ollama.Client] = None,
 ) -> None:
     """
     Test the LLM via LM Studio by comparing model responses with expected answers.
 
     Args:
         cfg (DictConfig): Configuration dictionary containing model settings.
-        test_dataset (str, optional): Path to the test dataset JSON file.
+        path_test_dataset (str, optional): Path to the test dataset JSON file.
             Defaults to "data/test_ru.json".
         test_file (str, optional): Path to save the processed test file.
             Defaults to "test.json".
+        test_func (Optional[List[Callable]]): List of additional test functions to execute on each result.
+        llm_url (str, optional): URL of the LLM service. Defaults to "http://localhost:1234/v1/".
+        use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
+        ollama_client (Optional[ollama.Client]): Ollama client for connection
 
     Returns:
         None
@@ -91,60 +220,33 @@ def test_via_lmstudio(
     Raises:
         Logs errors for failed tests and prints accuracy metrics.
     """
-    llm_url = "http://localhost:1234/v1/chat/completions"
-    with open(path_test_dataset, "r", encoding="utf-8") as file:
-        test_dataset = json.load(file)
-    dataset_to_json_for_test(test_dataset, test_file)
-    with open(test_file, "r", encoding="utf-8") as f:
-        prompts = json.load(f)
-    prompts_to_check = [prompt["user"] for prompt in prompts]
-    answers = [
-        test_dataset["examples"][bot]["answer"]["Content"]["Action"]
-        for bot in test_dataset["examples"]
-    ]
-    logging.debug(answers)
-    logging.debug(len(prompts_to_check))
-    count = 0
-    deepeval_passed_test = 0
-    for number, prompt in enumerate(prompts_to_check):
-        data = {
-            "messages": [{"role": "user", "content": prompt}],
-            # "model": f"game-model/{cfg.model.version}/{cfg.model.outfile[:-5]}{cfg.model.quant_postfix}.gguf",
-        }
-        response = requests.post(llm_url, json=data)
-        logging.debug(response.json())
-        model_answer = json.loads(response.json()["choices"][0]["message"]["content"])
-        if model_answer["Content"]["Action"] == answers[number]:
-            count += 1
-            logging.info(f"Test {number} passed")
-        else:
-            logging.error(
-                f"Test {number} failed. User input: {prompt}. \n"
-                f"Expected: {answers[number]}. Got: {json.loads(response.json()['choices'][0]['message']['content'])['Content']['Action']}"
-            )
+    if test_func is None:
+        test_func = [test_actions]
+    if ollama_client is None:
+        client = OpenAI(api_key="dummy", base_url=llm_url)
+    else:
+        client = ollama_client
+    for test in test_func:
         try:
-            # test_mention_number_of_values(prompt, model_answer["MessageText"])
-            deepeval_passed_test += 1
-        except AssertionError:
-            logging.error(
-                f"Test doesn't complete for prompt: {prompt}. \nModel answer: {model_answer}."
+            run_tests(
+                cfg=cfg,
+                client=client,
+                test_dataset_path=path_test_dataset,
+                test_file=test_file,
+                test_func=test,
+                use_ollama=use_ollama,
             )
-    total_tests = len(prompts_to_check)
-    logging.info("accuracy: " + str(count / total_tests))
-    final_metric = deepeval_passed_test / total_tests if total_tests > 0 else 0
-    logging.info(
-        f"Deepeval metrics: {final_metric:.2f} ({deepeval_passed_test}/{total_tests} test passed)"
-    )
+        except Exception as e:
+            logging.error(f"Test function {test.__name__} failed with error: {e}")
 
 
-def execute_test(
+def llamacpp_execute_test(
     llm,
     system_prompt: str,
     prompt: str,
     expected_answer: str,
     max_tokens: int,
     temperature: float,
-    json_schema: dict,
 ) -> tuple[dict, bool]:
     """
     Выполняет тест для одного запроса.
@@ -156,7 +258,6 @@ def execute_test(
         expected_answer (str): Ожидаемый результат.
         max_tokens (int): Максимальное число генерируемых токенов.
         temperature (float): Параметр температуры для генерации.
-        json_schema (dict): JSON схема для формата ответа.
 
     Returns:
         tuple: Кортеж, содержащий словарь с результатами теста и булевое значение (True, если тест пройден).
@@ -225,7 +326,7 @@ def test_via_llamacpp(
     n_ctx: int = 2048,
     temperature: float = 0.7,
     max_tokens: int = 2048,
-    test_func: Callable = execute_test,
+    test_func: Callable = llamacpp_execute_test,
     system_prompt: Optional[str] = None,
 ) -> float:
     """
@@ -293,7 +394,6 @@ def test_via_llamacpp(
             expected_answer=answers[number],
             max_tokens=max_tokens,
             temperature=temperature,
-            json_schema=json_schema,
         )
         results.append(result)
         if passed:

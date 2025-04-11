@@ -1,4 +1,23 @@
 services:
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile_ollama
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+      - ./models:/training_model/models
+    environment:
+      - OLLAMA_MODELS=/training_model/models
+    runtime: nvidia
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:11434" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   llm_training:
     build:
       context: .
@@ -8,4 +27,12 @@ services:
       - ./models:/training_model/models
       - ./data:/training_model/data
       - ./conf:/training_model/conf
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
     runtime: nvidia
+
+volumes:
+  ollama_models:
