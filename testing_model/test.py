@@ -227,14 +227,17 @@ def test_llm(
     else:
         client = ollama_client
     for test in test_func:
-        run_tests(
-            cfg=cfg,
-            client=client,
-            test_dataset_path=path_test_dataset,
-            test_file=test_file,
-            test_func=test,
-            use_ollama=use_ollama,
-        )
+        try:
+            run_tests(
+                cfg=cfg,
+                client=client,
+                test_dataset_path=path_test_dataset,
+                test_file=test_file,
+                test_func=test,
+                use_ollama=use_ollama,
+            )
+        except Exception as e:
+            logging.error(f"Test function {test.__name__} failed with error: {e}")
 
 
 def llamacpp_execute_test(
