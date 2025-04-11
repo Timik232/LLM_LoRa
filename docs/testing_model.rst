@@ -7,7 +7,7 @@ Submodules
 testing\_model.deepeval module
 ------------------------------
 
-.. automodule:: testing_model.deepeval
+.. automodule:: testing_model.deepeval_func
    :members:
    :show-inheritance:
    :undoc-members:
