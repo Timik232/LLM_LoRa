@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Callable, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from datasets import Dataset
 from hydra.utils import get_original_cwd
@@ -12,22 +12,26 @@ from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTo
 from trl import GRPOConfig, GRPOTrainer
 
 
-def reward_function(completions: list, row: dict) -> list:
+def reward_function(prompts: List[str], completions: List[str], **kwargs) -> list:
     """Compute rewards for GRPO training based on action matching.
 
     Args:
+        prompts (list): List of prompts for trl consistency
         completions (list): List of model-generated completions
-        row (dict): Dataset row containing 'correct_actions'
+        kwargs (dict): Dataset row containing 'correct_actions'
 
     Returns:
         list: List of reward values for each completion
     """
-    correct_actions = row["correct_actions"]
+    row = kwargs.get("row")
+    if isinstance(row, str):
+        row = json.loads(row)
+    correct_actions = row["Content"]["Action"]
     rewards = []
     for completion in completions:
         try:
             completion_dict = json.loads(completion)
-            generated_actions = completion_dict.get("Actions", [])
+            generated_actions = completion_dict.get("Content", {}).get("Action", [])
             if generated_actions == correct_actions:
                 rewards.append(1.0)  # Correct action match
             else:
@@ -38,7 +42,7 @@ def reward_function(completions: list, row: dict) -> list:
 
 
 def prepare_grpo_data(
-    testfile: str, trainfile: str, cfg: DictConfig
+    cfg: DictConfig,
 ) -> Tuple[Dataset, Dataset]:
     """Prepare datasets for GRPO training with prompts and correct actions.
 
@@ -52,17 +56,20 @@ def prepare_grpo_data(
     """
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
 
-    with open(os.path.join(data_dir, testfile), "r", encoding="utf-8") as file:
+    with open(os.path.join(data_dir, cfg.grpo.val_data), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
 
     with open(
-        os.path.join(get_original_cwd(), trainfile), "r", encoding="utf-8"
+        os.path.join(data_dir, cfg.grpo.train_data), "r", encoding="utf-8"
     ) as file:
         train_dataset = json.load(file)
 
-    def process_dataset(dataset):
+    def process_dataset(dataset: dict):
         processed_data = []
-        for example in dataset:
+        new_dataset = dict(dataset)
+        new_dataset.pop("system")
+        for example in new_dataset["examples"]:
+            logging.debug(example)
             prompt_dict = example["prompt"]
             history = prompt_dict["History"][0]  # First system message
             available_actions = prompt_dict["AvailableActions"]
@@ -89,7 +96,7 @@ def grpo_train(
     model: AutoModel | PeftModel | PreTrainedModel,
     tokenizer: AutoTokenizer | PreTrainedTokenizer,
     cfg: DictConfig,
-    data_preparing_func: Callable = prepare_grpo_data,
+    data_preparing_func: Optional[Callable],
     reward_func: Callable = reward_function,
 ) -> int:
     """Execute GRPO training pipeline.
@@ -105,15 +112,15 @@ def grpo_train(
         int: Number of global training steps completed
     """
     if data_preparing_func is None:
-        train_data, val_data = prepare_grpo_data(
-            cfg.grpo.val_data, cfg.grpo.train_data, cfg
-        )
+        train_data, val_data = prepare_grpo_data(cfg)
     else:
         train_data, val_data = data_preparing_func(
-            cfg.grpo.val_data, cfg.grpo.train_data, cfg
+            cfg, tokenizer, should_add_prompt=True
         )
     logging.info("GRPO data prepared")
     logging.debug(type(cfg.grpo.max_completion_length))
+    if cfg.grpo.max_completion_length == "None":
+        cfg.grpo.max_completion_length = tokenizer.model_max_length
     grpo_config = GRPOConfig(
         output_dir=cfg.model.new_model,
         per_device_train_batch_size=cfg.training.per_device_train_batch_size,
@@ -133,6 +140,7 @@ def grpo_train(
         report_to="wandb",
         save_total_limit=cfg.training.save_total_limit,
         load_best_model_at_end=cfg.training.load_best,
+        num_generations=cfg.grpo.num_generations,
     )
 
     trainer = GRPOTrainer(

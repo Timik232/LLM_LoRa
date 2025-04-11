@@ -19,6 +19,7 @@ from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 from peft import LoraConfig, PeftModel, get_peft_model
 from requests.auth import HTTPBasicAuth
+from torch import Tensor
 
 # from torch.nn import CrossEntropyLoss
 from transformers import (
@@ -100,13 +101,16 @@ def generate_and_tokenize_prompt(
     data_point: Dict[str, str],
     tokenizer: AutoTokenizer,
     cutoff: int,
-) -> Dict[str, torch.Tensor]:
+    should_add_prompt: bool = False,
+) -> Dict[str, str] | Dict[str, Tensor]:
     """Generate and tokenize a complete prompt.
 
     Args:
         data_point (Dict[str, str]): Dictionary containing conversation data
         tokenizer (AutoTokenizer): Hugging Face tokenizer
         cutoff (int): Maximum sequence length
+        should_add_prompt (bool): used for grpo, when
+            needed dict with keyword "prompt" returned
 
     Returns:
         Dict[str, torch.Tensor]: Tokenized prompt dictionary
@@ -117,11 +121,14 @@ def generate_and_tokenize_prompt(
         cutoff,
         full_prompt,
     )
-    return tokenized_full_prompt
+    if should_add_prompt:
+        return {"prompt": full_prompt}
+    else:
+        return tokenized_full_prompt
 
 
 def data_preparation(
-    cfg: DictConfig, tokenizer: AutoTokenizer
+    cfg: DictConfig, tokenizer: AutoTokenizer, should_add_prompt: bool = False
 ) -> Tuple[Dataset, Dataset]:
     """Prepare and preprocess training and validation datasets.
 
@@ -157,6 +164,7 @@ def data_preparation(
             generate_and_tokenize_prompt,
             tokenizer=tokenizer,
             cutoff=cfg.other.cutoff_len,
+            should_add_prompt=should_add_prompt,
         )
         train_data = dataset["train"].map(tokenize_partial)
         val_data = dataset["test"].map(tokenize_partial)
@@ -298,7 +306,12 @@ def train(cfg: DictConfig) -> int:
         trainer.train()
         global_steps: int = trainer.state.global_step
     if cfg.training.use_grpo:
-        grpo_train(model=model, tokenizer=tokenizer, cfg=cfg)
+        grpo_train(
+            model=model,
+            tokenizer=tokenizer,
+            cfg=cfg,
+            data_preparing_func=data_preparation,
+        )
     if not cfg.training.use_grpo and not cfg.training.use_sft:
         logging.warning("Model training not configured")
     else:

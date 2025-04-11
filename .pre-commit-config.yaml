@@ -9,6 +9,7 @@ repos:
       - id: check-json
       - id: detect-private-key
       - id: end-of-file-fixer
+        exclude: '.*\.sh$'
       - id: trailing-whitespace
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
