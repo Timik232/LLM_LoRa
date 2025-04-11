@@ -1,6 +1,8 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    build:
+      context: .
+      dockerfile: Dockerfile_ollama
     container_name: ollama
     ports:
       - "11434:11434"
@@ -26,7 +28,8 @@ services:
       - ./data:/training_model/data
       - ./conf:/training_model/conf
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     environment:
       - OLLAMA_HOST=http://ollama:11434
     runtime: nvidia

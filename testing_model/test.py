@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import re
 from typing import Any, Callable, Dict, List, Optional
 
@@ -91,10 +90,10 @@ def ollama_generate(
     response = client.generate(
         model=model_name,
         prompt=prompt,
-        format="json",
-        options={"schema": schema},
+        format=schema,
     )
-    return json.loads(response["response"])
+    logging.debug(response)
+    return response["response"]
 
 
 def call_llm(prompt: str, model: str, client: OpenAI) -> str:
@@ -118,6 +117,7 @@ def call_llm(prompt: str, model: str, client: OpenAI) -> str:
     content = response.choices[0].message.content
     model_answer = content
     return model_answer
+
 
 def run_tests(
     cfg: DictConfig,
@@ -170,9 +170,7 @@ def run_tests(
             schema = MainModel.model_json_schema()
             model_answer = ollama_generate(
                 client=client,
-                model_name=os.path.join(
-                    cfg.paths.output_dir + cfg.model.gguf_directory + cfg.model.outfile
-                ),
+                model_name=cfg.model.outfile.replace(".gguf", ""),
                 prompt=prompt,
                 schema=schema,
             )

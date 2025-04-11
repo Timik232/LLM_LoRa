@@ -11,9 +11,9 @@ model:
   torch_dtype: "float16"
   attn_implementation: "eager"
   train_steps: 60
-  outfile: "custom_model.gguf" # if you change this, change the model in run_pipeline
+  outfile: "custom-model.gguf" # if you change this, change the model in run_pipeline
   qtype: "q4_1"
-  gguf_directory: "custom_model"
+  gguf_directory: "custom-model" # if you change this, change in run_pipeline
   lora_r: 16
   lora_alpha: 32
   lora_dropout: 0.1
@@ -48,14 +48,14 @@ grpo:
 paths:
   data_dir: "data"
   merged_model_path: "merged_model_fp16"
-  output_dir: "models"
-  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
-#  venv_python_path: "python" # for local run write full path to the venv
-  llama_cpp_dir: "llama.cpp"
+  output_dir: "models" # if you change this, change the in run_pipeline
+#  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+  venv_python_path: "python" # for local run write full path to the venv
+  llama_cpp_dir: "../llama.cpp"
   #  "T:/lm-studio/models/game-model"
-  final_weights_path: "models"
-#  quantized_path: "build/bin/llama-quantize" # for local run path may be different
-  quantized_path: "llama-quantize.exe"
+  final_weights_path: "models" # if you change this, change in run_pipeline
+  quantized_path: "build/bin/llama-quantize" # for local run path may be different
+#  quantized_path: "llama-quantize.exe"
 
 other:
   cutoff_len: 2048
@@ -63,7 +63,7 @@ other:
   hf_token: "INSERT YOUR HUGGING FACE TOKEN HERE"
 
 testing:
-  manual_lmstudio_test: true # use only for local run
+  manual_lmstudio_test: false # use only for local run
   test: true
   test_dataset: "data/test_ru.json"
   output_test_file: "../test.json"

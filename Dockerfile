@@ -14,7 +14,11 @@ RUN apt-get update && \
         vim \
         git \
         build-essential \
-        cmake && \
+        cmake  \
+        curl \
+        jq  \
+        libcurl4-openssl-dev \
+        && \
     rm -rf /var/lib/apt/lists/*
 
 RUN ln -s /usr/bin/python3.11 /usr/bin/python

@@ -1,32 +1,68 @@
 #!/bin/bash
 
-# 1. Train the model
 echo "=== Starting Training Phase ==="
 python -m training_model
 
-# 2. Create Modelfile
-echo "=== Creating Modelfile ==="
-mkdir -p /models/custom_model
-cat > /models/custom_model/Modelfile.custom_model <<EOL
-FROM /models/custom_model/custom_model.gguf
+echo "=== Preparing Model for Ollama ==="
+GGUF_DIR="models/custom-model"
+mkdir -p "$GGUF_DIR"
+
+echo "$(ls "$GGUF_DIR")"
+
+cat <<EOF > "$GGUF_DIR/Modelfile"
+FROM custom-model.gguf
 PARAMETER temperature 0.7
-EOL
-# 3. Wait for Ollama to be ready
-echo "=== Waiting for Ollama ==="
-while ! curl -s http://ollama:11434 > /dev/null; do
-  echo "Ollama not ready yet, retrying in 5 seconds..."
-  sleep 5
+EOF
+
+GGUF_FILE="$GGUF_DIR/custom-model.gguf"
+
+if [ ! -f "$GGUF_FILE" ]; then
+    echo "Error: $GGUF_FILE does not exist."
+    exit 1
+fi
+
+echo "=== Creating Model in Ollama ==="
+MAX_ATTEMPTS=30
+ATTEMPT_NUM=1
+until curl -s http://ollama:11434 >/dev/null; do
+    if [ $ATTEMPT_NUM -ge $MAX_ATTEMPTS ]; then
+        echo "Ollama service not ready, exiting..."
+        exit 1
+    fi
+    echo "Waiting for Ollama service..."
+    sleep 1
+    ATTEMPT_NUM=$((ATTEMPT_NUM+1))
 done
 
-# 4. Create and push the model
-echo "=== Registering Model with Ollama ==="
-ollama create custom-model -f /models/custom_model/Modelfile.custom_model
+HASH=$(sha256sum "$GGUF_FILE" | awk '{print $1}')
+BLOB_NAME="sha256:$HASH"
 
-# 5. Run tests
+echo "Calculated blob name: $BLOB_NAME"
+
+curl -T "$GGUF_FILE" -X POST "http://ollama:11434/api/blobs/$BLOB_NAME"
+
+if [ $? -ne 0 ]; then
+    echo "Failed to upload blob"
+    exit 1
+fi
+
+JSON_PAYLOAD=$(jq -n \
+    --arg name "custom-model" \
+    --arg blob_name "$BLOB_NAME" \
+    --arg gguf_file "$GGUF_FILE" \
+    '{name: $name, files: {
+    "$gguf_file": $blob_name}}')
+
+curl -X POST http://ollama:11434/api/create \
+    -H "Content-Type: application/json" \
+    -d "$JSON_PAYLOAD"
+
+if [ $? -eq 0 ]; then
+    echo "Model creation confirmed"
+else
+    echo "Model creation failed"
+    exit 1
+fi
+
 echo "=== Running Integration Tests ==="
 python -m testing_model
-
-# 6. Keep container alive for interaction
-echo "=== Pipeline Complete ==="
-echo "Model is ready for use at http://localhost:11434"
-tail -f /dev/null

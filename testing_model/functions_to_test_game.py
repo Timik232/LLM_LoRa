@@ -25,12 +25,12 @@ def test_actions(_: str, model_answer: str, correct_answer: str):
         predicted_action = model_answer_dict["Content"]["Action"]
         correct_action = correct_answer_dict["Content"]["Action"]
         assert predicted_action == correct_action, "Action doesn't match"
-    except JSONDecodeError:
+    except JSONDecodeError as err:
         error_msg = "Model answer or correct answer is not in JSON format"
-        raise AssertionError(error_msg)
-    except KeyError:
+        raise AssertionError(error_msg) from err
+    except KeyError as err:
         error_msg = "Model answer or correct answer doesn't have correct keys"
-        raise AssertionError(error_msg)
+        raise AssertionError(error_msg) from err
     except Exception as e:
         error_msg = f"Error in test_actions: {e}"
-        raise AssertionError(error_msg)
+        raise AssertionError(error_msg) from e
