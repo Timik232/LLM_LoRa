@@ -1,5 +1,3 @@
 sphinx
 sphinx_rtd_theme
 autodocsumm
-torch
-deepeval
