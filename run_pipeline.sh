@@ -35,7 +35,6 @@ echo "Ollama service is running successfully!"
 
 HASH=$(sha256sum "$GGUF_FILE" | awk '{print $1}')
 BLOB_NAME="sha256:$HASH"
-
 echo "Calculated blob name: $BLOB_NAME"
 
 curl -T "$GGUF_FILE" -X POST "http://ollama:11434/api/blobs/$BLOB_NAME"
