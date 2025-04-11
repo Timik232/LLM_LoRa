@@ -20,10 +20,10 @@ model:
   use_8bit: false
 
 training:
-  per_device_train_batch_size: 1
-  per_device_eval_batch_size: 1
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
   gradient_accumulation_steps: 4
-  num_train_epochs: 0.1
+  num_train_epochs: 1
   eval_steps: 20
   logging_steps: 5
   warmup_steps: 10
@@ -37,25 +37,26 @@ training:
   gradient_checkpointing: true
   save_total_limit: 5
   load_best: false
-  use_grpo: false
-  use_sft: true
+  use_grpo: true
+  use_sft: false
 
 grpo:
   val_data: "test_ru.json"
   train_data: "dataset_ru.json"
   max_completion_length: None
+  num_generations: 2
 
 paths:
   data_dir: "data"
   merged_model_path: "merged_model_fp16"
   output_dir: "models" # if you change this, change the in run_pipeline
-#  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
-  venv_python_path: "python" # for local run write full path to the venv
-  llama_cpp_dir: "../llama.cpp"
+  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+#  venv_python_path: "python" # for local run write full path to the venv
+  llama_cpp_dir: "llama.cpp"
   #  "T:/lm-studio/models/game-model"
   final_weights_path: "models" # if you change this, change in run_pipeline
-  quantized_path: "build/bin/llama-quantize" # for local run path may be different
-#  quantized_path: "llama-quantize.exe"
+#  quantized_path: "build/bin/llama-quantize" # for local run path may be different
+  quantized_path: "llama-quantize.exe"
 
 other:
   cutoff_len: 2048
