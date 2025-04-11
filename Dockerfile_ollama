@@ -3,6 +3,7 @@ FROM ollama/ollama:latest
 RUN apt-get update && apt-get install -y curl
 
 VOLUME ["/root/.ollama", "/training_model/models"]
+RUN mkdir -p /training_model/models && chmod 777 /training_model/models
 
 EXPOSE 11434
 
