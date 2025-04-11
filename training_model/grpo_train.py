@@ -47,8 +47,6 @@ def prepare_grpo_data(
     """Prepare datasets for GRPO training with prompts and correct actions.
 
     Args:
-        testfile (str): Path to the test file.
-        trainfile (str): Path to the train file.
         cfg (DictConfig): Configuration object
 
     Returns:
