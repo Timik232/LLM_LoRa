@@ -7,8 +7,6 @@ echo "=== Preparing Model for Ollama ==="
 GGUF_DIR="models/custom-model"
 mkdir -p "$GGUF_DIR"
 
-echo "$(ls "$GGUF_DIR")"
-
 cat <<EOF > "$GGUF_DIR/Modelfile"
 FROM custom-model.gguf
 PARAMETER temperature 0.7
