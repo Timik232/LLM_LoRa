@@ -102,7 +102,7 @@ def generate_and_tokenize_prompt(
     tokenizer: AutoTokenizer,
     cutoff: int,
     should_add_prompt: bool = False,
-) -> dict[str, str] | dict[str, Tensor]:
+) -> Dict[str, str] | Dict[str, Tensor]:
     """Generate and tokenize a complete prompt.
 
     Args:
