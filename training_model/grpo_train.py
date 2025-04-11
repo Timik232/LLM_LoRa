@@ -41,7 +41,7 @@ def reward_function(prompts: List[str], completions: List[str], **kwargs) -> lis
 
 
 def prepare_grpo_data(
-    testfile: str | bytes, trainfile: str | bytes, cfg: DictConfig
+    cfg: DictConfig,
 ) -> Tuple[Dataset, Dataset]:
     """Prepare datasets for GRPO training with prompts and correct actions.
 
@@ -55,15 +55,17 @@ def prepare_grpo_data(
     """
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
 
-    with open(os.path.join(data_dir, testfile), "r", encoding="utf-8") as file:
+    with open(os.path.join(data_dir, cfg.grpo.val_data), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
 
-    with open(os.path.join(data_dir, trainfile), "r", encoding="utf-8") as file:
+    with open(
+        os.path.join(data_dir, cfg.grpo.train_data), "r", encoding="utf-8"
+    ) as file:
         train_dataset = json.load(file)
 
     def process_dataset(dataset: dict):
         processed_data = []
-        new_dataset = dataset
+        new_dataset = dict(dataset)
         new_dataset.pop("system")
         for example in new_dataset["examples"]:
             logging.debug(example)
@@ -109,9 +111,7 @@ def grpo_train(
         int: Number of global training steps completed
     """
     if data_preparing_func is None:
-        train_data, val_data = prepare_grpo_data(
-            cfg.grpo.val_data, cfg.grpo.train_data, cfg
-        )
+        train_data, val_data = prepare_grpo_data(cfg)
     else:
         train_data, val_data = data_preparing_func(
             cfg, tokenizer, should_add_prompt=True
