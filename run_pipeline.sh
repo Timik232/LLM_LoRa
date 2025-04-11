@@ -33,6 +33,7 @@ until curl -s http://ollama:11434 >/dev/null; do
     sleep 1
     ATTEMPT_NUM=$((ATTEMPT_NUM+1))
 done
+echo "Ollama service is running successfully!"
 
 HASH=$(sha256sum "$GGUF_FILE" | awk '{print $1}')
 BLOB_NAME="sha256:$HASH"

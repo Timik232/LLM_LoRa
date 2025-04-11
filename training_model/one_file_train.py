@@ -417,7 +417,7 @@ def quantize_model(
 
 def copy_data(
     file: str,
-    gguf_directory: str = "v1",
+    gguf_directory: str = "custom-model",
     destination: str = r"T:\lm-studio\models\game-model",
 ) -> None:
     """Move file to destination directory with versioning.
