@@ -23,21 +23,29 @@ def reward_function(prompts: List[str], completions: List[str], **kwargs) -> lis
     Returns:
         list: List of reward values for each completion
     """
-    row = kwargs.get("row")
-    if isinstance(row, str):
-        row = json.loads(row)
-    correct_actions = row["Content"]["Action"]
-    rewards = []
+    correct_answer: Optional[str] = kwargs.get("correct_answer")
+    logging.debug("Generated completions: %s", completions)
+    logging.debug("Correct answer: %s", correct_answer)
+
+    rewards: List[float] = []
+    if correct_answer is None:
+        # If somehow there's no "correct_answer" in this batch, penalize everything.
+        return [-1.0] * len(completions)
+
     for completion in completions:
         try:
-            completion_dict = json.loads(completion)
-            generated_actions = completion_dict.get("Content", {}).get("Action", [])
-            if generated_actions == correct_actions:
-                rewards.append(1.0)  # Correct action match
+            # Each `completion` is supposed to be a JSON‐string, e.g.
+            #   '{"Content": {"Action": "Разговор"}}'
+            parsed = json.loads(completion)
+            generated_action = parsed.get("Content", {}).get("Action", None)
+            if generated_action == correct_answer:
+                rewards.append(1.0)
             else:
-                rewards.append(0.0)  # Incorrect action
+                rewards.append(0.0)
         except (json.JSONDecodeError, KeyError):
-            rewards.append(-1.0)  # Penalize invalid completions
+            # If the model output wasn’t valid JSON → penalize
+            rewards.append(-1.0)
+
     return rewards
 
 
@@ -63,26 +71,45 @@ def prepare_grpo_data(
         train_dataset = json.load(file)
 
     def process_dataset(dataset: dict):
+        """
+        Convert a dataset structured as:
+          {
+            "system": "…",
+            "examples": {
+              "topic2": {
+                "prompt": { … },
+                "answer": { … }
+              },
+              "topic5": { … },
+               …
+            }
+          }
+        into a HuggingFace Dataset with fields “prompt” and “correct_actions” (or “correct_answer”).
+        """
         processed_data = []
         new_dataset = dict(dataset)
-        new_dataset.pop("system")
-        for example in new_dataset["examples"]:
-            logging.debug(example)
+
+        # Remove the top‐level "system" field; we only care about each example under "examples"
+        new_dataset.pop("system", None)
+
+        for _, example in new_dataset["examples"].items():
             prompt_dict = example["prompt"]
             history = prompt_dict["History"][0]  # First system message
             available_actions = prompt_dict["AvailableActions"]
             user_input = prompt_dict["UserInput"]
             prompt_str = (
-                f"{history}\nAvailableActions: {available_actions}\nUser: {user_input}"
+                f"{history}\n"
+                f"AvailableActions: {available_actions}\n"
+                f"User: {user_input}"
             )
 
             answer_dict = example["answer"]
             correct_action = answer_dict["Content"]["Action"]
-            correct_actions = [correct_action]  # Store as a list for reward function
 
             processed_data.append(
-                {"prompt": prompt_str, "correct_actions": correct_actions}
+                {"prompt": prompt_str, "correct_answer": correct_action}
             )
+
         return Dataset.from_list(processed_data)
 
     train_data = process_dataset(train_dataset)

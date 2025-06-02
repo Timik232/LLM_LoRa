@@ -1,4 +1,5 @@
 """Main file for model training"""
+
 import functools
 import gc
 import json
@@ -122,7 +123,7 @@ def generate_and_tokenize_prompt(
         full_prompt,
     )
     if should_add_prompt:
-        return {"prompt": full_prompt}
+        return {"prompt": full_prompt, "correct_answer": data_point["bot"]}
     else:
         return tokenized_full_prompt
 
@@ -135,6 +136,7 @@ def data_preparation(
     Args:
         cfg (DictConfig): Configuration object
         tokenizer (AutoTokenizer): Hugging Face tokenizer
+        should_add_prompt (bool): If True, returns dict with "prompt" key for grpo training
 
     Returns:
         Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
@@ -310,7 +312,7 @@ def train(cfg: DictConfig) -> int:
             model=model,
             tokenizer=tokenizer,
             cfg=cfg,
-            data_preparing_func=data_preparation,
+            data_preparing_func=None,
         )
     if not cfg.training.use_grpo and not cfg.training.use_sft:
         logging.warning("Model training not configured")
