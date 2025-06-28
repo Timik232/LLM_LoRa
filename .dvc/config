@@ -1,0 +1,7 @@
+[cache]
+    type = hardlink
+    protected = true
+[core]
+    remote = nas-remote
+['remote "nas-remote"']
+    url = //diskstation_105/dvc_storage

@@ -37,6 +37,7 @@ sphinx = "^8.2.3"
 autodocsumm = "^0.2.14"
 types-requests = "^2.32.0.20250306"
 types-pyyaml = "^6.0.12.20250326"
+uv = "^0.7.16"
 
 [[tool.poetry.source]]
 name = "torch-cuda"

@@ -5784,6 +5784,34 @@ socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
 zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
+name = "uv"
+version = "0.7.16"
+description = "An extremely fast Python package and project manager, written in Rust."
+optional = false
+python-versions = ">=3.8"
+groups = ["dev"]
+files = [
+    {file = "uv-0.7.16-py3-none-linux_armv6l.whl", hash = "sha256:bd6f9818368feba65f3f4222252ead3d0a3cc78e8f3e15103455151e5bfbeadb"},
+    {file = "uv-0.7.16-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:174ad89bc8beb8f9957d2c4939f9cf5808d92fe3cae8f57e8c9c5e0dba0edf45"},
+    {file = "uv-0.7.16-py3-none-macosx_11_0_arm64.whl", hash = "sha256:2fb50fd5893a165494386ebbd81f460260b8acf249d182a4551d391a3ac59641"},
+    {file = "uv-0.7.16-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl", hash = "sha256:d514a7917f3d489d3e7cf4b8857a3603396a0800e94a1cadd785102ac09c410c"},
+    {file = "uv-0.7.16-py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:d7fd5b426a450f9f6d621d6e85e5d75137a55e62cc4b44fe8567e6db09071be0"},
+    {file = "uv-0.7.16-py3-none-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:bbebbf44232a8eba337302541eab193a58ba00c36856834d8580800a0da0b09d"},
+    {file = "uv-0.7.16-py3-none-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:82f5c5b837bed86ec42fc3e482dd92fe0fc512179d5e85bb83c5a885cfadae36"},
+    {file = "uv-0.7.16-py3-none-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:58bb5dd7269d42803552356744964a8c62655fa3bbca9f777fb518c061a061ff"},
+    {file = "uv-0.7.16-py3-none-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:46e0c2b391433d721aba5be039296488df9eaf51a1d8edc96223571f721f302b"},
+    {file = "uv-0.7.16-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3e5be12a39dcf9d709cf5e741872161802564e8dc0226e82056072cf73434978"},
+    {file = "uv-0.7.16-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:4dd8afca245e8df32e04aea4288c15028ee5b8593f92cd8bef23c38a51e30eed"},
+    {file = "uv-0.7.16-py3-none-musllinux_1_1_armv7l.whl", hash = "sha256:c056d6518a7dd23699150a938c67d8bacecf7a80514c00c1eda75ecab44da78a"},
+    {file = "uv-0.7.16-py3-none-musllinux_1_1_i686.whl", hash = "sha256:2752b40f2aa082b4456d8a2d61b0f52a7114c360e5cf6f7c23beca426ac9ebad"},
+    {file = "uv-0.7.16-py3-none-musllinux_1_1_x86_64.whl", hash = "sha256:81e579fe282c9d39d2ef6043d48ed47112aa912239303a2e1fe2a3fcaeba0fbb"},
+    {file = "uv-0.7.16-py3-none-win32.whl", hash = "sha256:103dc57701d470b6a2d107c2a10a75c48db9db7e1c0c54bf306aedabb19c0b01"},
+    {file = "uv-0.7.16-py3-none-win_amd64.whl", hash = "sha256:8f755620676f85c31b50b566e8faddf49c7111eed0fe05d98345173603bf1da4"},
+    {file = "uv-0.7.16-py3-none-win_arm64.whl", hash = "sha256:66a33948b5b6507657483ffb9a7e47d6f7ca6b70099f1df8e50964f011da07b4"},
+    {file = "uv-0.7.16.tar.gz", hash = "sha256:5a9e703e07f1263d801e90179d15c13ad3da9d6dcea69e93215930409303fa85"},
+]
+
+[[package]]
 name = "virtualenv"
 version = "20.29.3"
 description = "Virtual Python Environment builder"
@@ -6397,4 +6425,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11, <=3.13"
-content-hash = "a222fabd5a92788ff0de47d54af9e15ce8afac8eb87b54015cb1c0d6cb175abb"
+content-hash = "2817d7508e4315ce16604d7fdb19a1c89e58b8f6e7854ca03d54e33ed63ea108"
