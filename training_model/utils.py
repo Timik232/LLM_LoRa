@@ -1,47 +1,46 @@
-"""Additional functions for the training_model module."""
+"""
+Module with utility functions for training the model.
+"""
 import json
+import os
 from typing import Any, Dict, List
 
+from dotenv import load_dotenv
 from huggingface_hub import login
 from omegaconf import DictConfig, OmegaConf
 
 import wandb
 from wandb.sdk.wandb_run import Run
 
-from .private_api import WANB_API
-
-# @dataclass
-# class Config:
-#     # model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-#     # model_name = "aifeifei798/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored"
-#     # model_name = "IlyaGusev/saiga_llama3_8b"
-#     model_name = "t-tech/T-lite-it-1.0"
-#     # model_name = "yandex/YandexGPT-5-Lite-8B-pretrain"
-#     dataset_name = "data/dataset_ru.json"
-#     # dataset_name = "ruslanmv/ai-medical-chatbot"
-#     new_model = "tlite7b-chat-vika"
-#     torch_dtype = torch.float16
-#     attn_implementation = "eager"
-#     train_steps = 60
+load_dotenv()
 
 
 def tokens_init(cfg: DictConfig) -> Run:
-    """Initialize Weights & Biases logging and configure authentication.
+    """
+    Initialize Weights & Biases logging and configure authentication using environment variables.
+
+    This function reads Hugging Face and Wandb tokens from environment variables:
+        - HF_TOKEN for Hugging Face
+        - WANDB_API_KEY for Weights & Biases
 
     Args:
-        cfg (DictConfig): Configuration object with training parameters
+        cfg (DictConfig): Configuration object with training parameters.
 
     Returns:
-        Run: Initialized Weights & Biases run object
+        Run: Initialized Weights & Biases run object.
     """
     if cfg.other.hf_login:
-        hf_token = cfg.other.hf_token
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token is None:
+            raise EnvironmentError("Environment variable 'HF_TOKEN' is not set.")
         login(token=hf_token)
 
-    # wb_token = user_secrets.get_secret("wandb_api_key")
-    wb_token = WANB_API
-
+    # Weights & Biases login
+    wb_token = os.getenv("WANB_API")
+    if wb_token is None:
+        raise EnvironmentError("Environment variable 'WANB_API' is not set.")
     wandb.login(key=wb_token)
+
     run = wandb.init(
         project="Fine-tune on Dataset for game",
         job_type="training",
@@ -52,7 +51,8 @@ def tokens_init(cfg: DictConfig) -> Run:
 
 
 def get_user_prompt(data: Dict[str, Any]) -> str:
-    """Construct user prompt from conversation data.
+    """
+    Construct a user prompt from conversation data.
 
     Args:
         data (Dict[str, Any]): Dictionary containing conversation history and metadata:
@@ -61,53 +61,62 @@ def get_user_prompt(data: Dict[str, Any]) -> str:
             - UserInput: Current user input
 
     Returns:
-        str: Formatted prompt string with conversation context
+        str: Formatted prompt string with conversation context.
     """
-    user_message = (
+    prompt = (
         "Системное сообщение, которому ты должен следовать, отмечено словом 'system'. "
-        "Предыдущие сообщения пользователя отмечены словом 'user'. Твои предыдущие сообщения отмечены словом 'VIKA'. "
+        "Предыдущие сообщения пользователя отмечены словом 'user'. "
+        "Твои предыдущие сообщения отмечены словом 'VIKA'."
         "\n\nИстория сообщений:"
     )
-    for message in data["History"]:
-        user_message += f"\n{message}"
-    user_message += f"\n\nТы можешь совершать только действия из представленного списка.\nДоступные действия:\n Разговор, {', '.join(data['AvailableActions'])}"
-    user_message += f"\n\nОтветь на сообщение пользователя, беря во внимания всю предыдущую информацию.\nСообщение пользователя:\n{data['UserInput']}"
-    return user_message
+    for message in data.get("History", []):
+        prompt += f"\n{message}"
+    prompt += (
+        "\n\nТы можешь совершать только действия из представленного списка.\n"
+        f"Доступные действия: Разговор, {', '.join(data.get('AvailableActions', []))}"
+    )
+    prompt += (
+        "\n\nОтветь на сообщение пользователя, беря во внимания всю предыдущую информацию.\n"
+        f"Сообщение пользователя: {data.get('UserInput', '')}"
+    )
+    return prompt
 
 
 def dataset_to_json(dataset: Dict[str, Any], filename: str) -> List[Dict[str, str]]:
-    """Convert dataset to JSON format and save to file.
+    """
+    Convert dataset to JSON lines format and save to a file.
 
     Args:
-        dataset (Dict[str, Any]): Source dataset dictionary containing:
-            - system: System prompt template
-            - examples: Dictionary of conversation examples
-        filename (str): Output file path
+        dataset (Dict[str, Any]): Source dataset containing:
+            - 'system': System prompt template
+            - 'examples': Dictionary of conversation examples
+        filename (str): Output file path where JSON lines are written.
 
     Returns:
-        List[Dict[str, str]]: List of generated JSON objects with conversation data
+        List[Dict[str, str]]: List of JSON objects representing each example.
     """
-    json_objects = []
-    system = dataset["system"]
-    dataset = dataset["examples"]
+    json_objects: List[Dict[str, str]] = []
+    system_template = dataset.get("system", "")
+    examples = dataset.get("examples", {})
 
-    with open(filename, "w", encoding="utf-8") as file:
-        file.write("")
+    # Initialize (or clear) the output file
+    with open(filename, "w", encoding="utf-8"):
+        pass
 
-    for row in dataset.keys():
-        system_message = system
-        user_message = get_user_prompt(dataset[row]["prompt"])
-        # user_message = str(dataset[row]['prompt'])
-        bot_message = str(dataset[row]["answer"])
+    for _, example in examples.items():
+        system_message = system_template
+        user_message = get_user_prompt(example.get("prompt", {}))
+        bot_message = str(example.get("answer", ""))
 
         json_object = {
             "system": system_message,
             "user": user_message,
             "bot": bot_message,
         }
-
         json_objects.append(json_object)
-        with open(filename, "a", encoding="utf-8") as file:
-            file.write(json.dumps(json_object, ensure_ascii=False) + "\n")
+
+        # Append JSON object per line
+        with open(filename, "a", encoding="utf-8") as f:
+            f.write(json.dumps(json_object, ensure_ascii=False) + "\n")
 
     return json_objects

@@ -9,7 +9,7 @@ import shutil
 import subprocess
 from contextlib import contextmanager
 from tempfile import TemporaryDirectory
-from typing import Callable, Dict, Generator, Tuple
+from typing import Any, Callable, Dict, Generator, Tuple
 
 # from typing import Any, Dict, List, Union
 # import numpy as np
@@ -199,7 +199,7 @@ def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str) -> N
     logging.info("Model merged")
 
 
-def train(cfg: DictConfig) -> int:
+def train(cfg: DictConfig) -> dict[str, int | Any]:
     """Execute full training pipeline.
 
     Args:
@@ -214,7 +214,7 @@ def train(cfg: DictConfig) -> int:
         if isinstance(cfg.model.torch_dtype, str)
         else cfg.model.torch_dtype
     )
-    if not cfg.model.use_8bit:
+    if not cfg.model.quant.use_8bit:
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -245,9 +245,9 @@ def train(cfg: DictConfig) -> int:
             )
     model.resize_token_embeddings(len(tokenizer))
     peft_config = LoraConfig(
-        r=cfg.model.lora_r,
-        lora_alpha=cfg.model.lora_alpha,
-        lora_dropout=cfg.model.lora_dropout,
+        r=cfg.model.lora.r,
+        lora_alpha=cfg.model.lora.alpha,
+        lora_dropout=cfg.model.lora.dropout,
         bias="none",
         task_type="CAUSAL_LM",
         target_modules=[
@@ -266,6 +266,7 @@ def train(cfg: DictConfig) -> int:
     train_data, val_data = data_preparation(cfg, tokenizer)
     logging.info("Data prepared")
     global_steps = 0
+    eval_loss = 0.0
     if cfg.training.use_sft:
         sft_config = SFTConfig(
             output_dir=cfg.model.new_model,
@@ -296,6 +297,8 @@ def train(cfg: DictConfig) -> int:
             save_total_limit=cfg.training.save_total_limit,
             load_best_model_at_end=cfg.training.load_best,
         )
+        if cfg.training.use_optuna_optimize:
+            sft_config.run_name = f"{sft_config.run_name}_optuna"
 
         trainer = SFTTrainer(
             model=model,
@@ -307,6 +310,9 @@ def train(cfg: DictConfig) -> int:
         )
         trainer.train()
         global_steps: int = trainer.state.global_step
+        eval_results = trainer.evaluate()
+        eval_loss = eval_results["eval_loss"]
+        logging.info(f"Evaluation loss: {eval_loss}")
     if cfg.training.use_grpo:
         grpo_train(
             model=model,
@@ -326,7 +332,7 @@ def train(cfg: DictConfig) -> int:
     del model, merged_model
     gc.collect()
     torch.cuda.empty_cache()
-    return global_steps
+    return {"global_steps": global_steps, "eval_loss": eval_loss}
 
 
 def convert_to_gguf(
@@ -447,7 +453,7 @@ def copy_data(
     shutil.move(os.path.join(os.getcwd(), file), destination_path)
 
 
-def train_pipeline(cfg: DictConfig) -> None:
+def train_pipeline(cfg: DictConfig) -> Dict[str, Any]:
     """Execute complete training pipeline including conversion and quantization.
 
     Args:
@@ -457,7 +463,9 @@ def train_pipeline(cfg: DictConfig) -> None:
         RuntimeError: If quantization step fails
     """
     try:
-        steps = train(cfg)
+        result = train(cfg)
+        steps = result["global_steps"]
+        eval_loss = result["eval_loss"]
 
         with TemporaryDirectory() as merged_model_dir:
             model_merge_for_converting(cfg, steps, merged_model_dir)
@@ -477,13 +485,13 @@ def train_pipeline(cfg: DictConfig) -> None:
             if quantize_model(
                 model_path=os.path.join(merged_model_dir, outfile),
                 outfile=quantized_file,
-                qtype=cfg.model.qtype,
+                qtype=cfg.model.quant.qtype,
                 llama_cpp_path=os.path.abspath(cfg.paths.llama_cpp_dir),
                 quantized_path=cfg.paths.quantized_path,
             ):
                 copy_data(
                     quantized_file,
-                    cfg.model.gguf_directory,
+                    cfg.model.quant.gguf_dir,
                     cfg.paths.final_weights_path,
                 )
                 if os.path.exists(quantized_file):
@@ -493,6 +501,7 @@ def train_pipeline(cfg: DictConfig) -> None:
                 raise RuntimeError("Quantization failed")
 
         logging.info("Training pipeline completed")
+        return {"eval_loss": eval_loss}
 
     finally:
         wandb.finish()
@@ -501,17 +510,18 @@ def train_pipeline(cfg: DictConfig) -> None:
         torch.cuda.empty_cache()
 
 
-def main_train(data_dir: str, cfg: DictConfig) -> None:
+def main_train(data_dir: str, cfg: DictConfig) -> Dict[str, Any]:
     """Main training entry point with dataset processing.
 
     Args:
         data_dir (str): Directory containing training data
         cfg (DictConfig): Configuration object
     """
-    train_pipeline(cfg)
+    result = train_pipeline(cfg)
     with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
     dataset_to_json(test_dataset, cfg.testing.output_test_file)
+    return result
 
 
 def post_new_dataset() -> None:

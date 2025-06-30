@@ -9,7 +9,7 @@ from omegaconf import DictConfig
 from testing_model import test_llm
 from testing_model.test import dataset_to_json_for_test
 
-from . import configure_logging, main_train
+from . import configure_logging, main_train, optuna_optimize
 
 
 @hydra.main(version_base="1.1", config_path="../conf", config_name="config")
@@ -38,7 +38,11 @@ def main(cfg: DictConfig) -> None:
     """
     configure_logging(logging.DEBUG)
     data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
-    main_train(data_dir, cfg)
+    if cfg.training.use_optuna_optimize:
+        optuna_optimize(data_dir, cfg)
+    else:
+        main_train(data_dir, cfg)
+
     if cfg.testing.manual_lmstudio_test:
         with open(cfg.testing.test_dataset, "r", encoding="utf-8") as file:
             test_dataset = json.load(file)

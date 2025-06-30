@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import time
 from typing import Any, Optional
@@ -13,10 +14,11 @@ from deepeval.metrics import GEval
 # from .test import dataset_to_json_for_test
 from deepeval.models import DeepEvalBaseLLM
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from mistralai import Mistral
 
-from training_model.private_api import MISTRAL_API
+load_dotenv()
 
 
 class CustomLocalModel(DeepEvalBaseLLM):
@@ -205,6 +207,7 @@ class CustomMistralModel(DeepEvalBaseLLM):
         return self.client
 
 
+MISTRAL_API = os.getenv("MISTRAL_API")
 mistral_model = CustomMistralModel(
     api_key=MISTRAL_API, model="mistral-small-latest", temperature=0.7
 )

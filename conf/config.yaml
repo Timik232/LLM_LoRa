@@ -6,25 +6,27 @@ defaults:
 
 model:
   model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
-  dataset_name: "data/dataset_ru.json"
+  dataset_name: "${paths.data_dir}/dataset_ru.json"
   new_model: "vikhr8b-chat-vika"
   torch_dtype: "float16"
   attn_implementation: "eager"
   train_steps: 60
   outfile: "custom-model.gguf" # if you change this, change the model in run_pipeline
-  qtype: "q4_1"
-  gguf_directory: "custom-model" # if you change this, change in run_pipeline
-  lora_r: 16
-  lora_alpha: 32
-  lora_dropout: 0.1
-  use_8bit: false
+  quant:
+    qtype: "q4_1"
+    gguf_dir: "${paths.gguf_directory}" # if you change this, change in run_pipeline
+    use_8bit: false
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.1
 
 training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 4
   num_train_epochs: 1
-  eval_steps: 20
+  eval_steps: 25
   logging_steps: 5
   warmup_steps: 10
   learning_rate: 2e-5
@@ -37,8 +39,9 @@ training:
   gradient_checkpointing: true
   save_total_limit: 5
   load_best: false
-  use_grpo: true
-  use_sft: false
+  use_grpo: false
+  use_sft: true
+  use_optuna_optimize: true
 
 grpo:
   val_data: "test_ru.json"
@@ -49,25 +52,25 @@ grpo:
 
 paths:
   data_dir: "data"
+  gguf_directory: custom-model
   merged_model_path: "merged_model_fp16"
-  output_dir: "models" # if you change this, change the in run_pipeline
-#  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
-  venv_python_path: "python" # for local run write full path to the venv
-  llama_cpp_dir: "../llama.cpp"
+  output_dir: "models" # if you change this, change in run_pipeline
+  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+#  venv_python_path: "python" # for local run write full path to the venv
+  llama_cpp_dir: "llama.cpp"
   #  "T:/lm-studio/models/game-model"
   final_weights_path: "models" # if you change this, change in run_pipeline
-  quantized_path: "build/bin/llama-quantize" # for local run path may be different
-#  quantized_path: "llama-quantize.exe"
+#  quantized_path: "build/bin/llama-quantize" # for local run path may be different
+  quantized_path: "llama-quantize.exe"
 
 other:
   cutoff_len: 2048
   hf_login: false
-  hf_token: "INSERT YOUR HUGGING FACE TOKEN HERE"
 
 testing:
   manual_lmstudio_test: false # use only for local run
   test: true
-  test_dataset: "data/test_ru.json"
+  test_dataset: "${paths.data_dir}/test_ru.json"
   output_test_file: "../test.json"
   prompt_for_deepeval: "test_prompt"
 
