@@ -3,6 +3,7 @@ Hyperparameter optimization script using Optuna and Hydra for your LLM training 
 
 Place this file (e.g., `hpo_optuna.py`) at your project root. Adjust `TRAIN_MODULE` to the path of your training module (e.g., 'train' if your main file is `train.py`).
 """
+
 import importlib
 import logging
 
@@ -29,7 +30,7 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
     try:
         GlobalHydra.instance().clear()
         lr = trial.suggest_float("training.learning_rate", 1e-6, 5e-5, log=True)
-        epochs = trial.suggest_int("training.num_train_epochs", 1, 5)
+        epochs = trial.suggest_float("training.num_train_epochs", 0.5, 2)
         weight_decay = trial.suggest_float("training.weight_decay", 0.0, 0.3)
         warmup_steps = trial.suggest_int("training.warmup_steps", 0, 500)
 
@@ -69,14 +70,14 @@ def optuna_optimize(data_dir: str, cfg: DictConfig) -> None:
     study = optuna.create_study(
         direction="minimize",
         sampler=optuna.samplers.TPESampler(),
-        pruner=optuna.pruners.MedianPruner(n_warmup_steps=2),
+        pruner=optuna.pruners.HyperbandPruner(min_resource=1, reduction_factor=3),
     )
 
     def run_trial(trial: optuna.Trial) -> float:
         """Wrapper to pass data_dir and cfg into the objective."""
         return objective(trial, data_dir, cfg)
 
-    study.optimize(run_trial, n_trials=5)
+    study.optimize(run_trial, n_trials=cfg.training.optuna_n_trials)
 
     logging.info("Best trial:")
     logging.info(f"  Loss: {study.best_value}")
@@ -84,7 +85,7 @@ def optuna_optimize(data_dir: str, cfg: DictConfig) -> None:
     for key, val in study.best_params.items():
         logging.info(f"    {key}: {val}")
 
-    with initialize(config_path="conf", job_name="optuna_final"):
+    with initialize(version_base="1.1", config_path="../conf", job_name="optuna_final"):
         best_overrides = [f"{k}={v}" for k, v in study.best_params.items()]
         best_cfg: DictConfig = compose(config_name="config", overrides=best_overrides)
         from omegaconf import OmegaConf

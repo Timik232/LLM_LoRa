@@ -11,8 +11,6 @@ from contextlib import contextmanager
 from tempfile import TemporaryDirectory
 from typing import Any, Callable, Dict, Generator, Tuple
 
-# from typing import Any, Dict, List, Union
-# import numpy as np
 import requests
 import torch
 from datasets import Dataset
@@ -21,8 +19,6 @@ from omegaconf import DictConfig
 from peft import LoraConfig, PeftModel, get_peft_model
 from requests.auth import HTTPBasicAuth
 from torch import Tensor
-
-# from torch.nn import CrossEntropyLoss
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,

@@ -42,6 +42,7 @@ training:
   use_grpo: false
   use_sft: true
   use_optuna_optimize: true
+  optuna_n_trials: 10
 
 grpo:
   val_data: "test_ru.json"
