@@ -45,6 +45,10 @@ name = "torch-cuda"
 url = "https://download.pytorch.org/whl/cu118"
 priority = "explicit"
 
+[tool.ruff]
+select = ["E", "F", "W", "B", "N", "C90"]
+line-length = 95
+
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
