@@ -35,7 +35,7 @@ training:
   max_seq_length: 2048
   optim: "paged_adamw_8bit"
   neftune_noise_alpha: 0
-  gradient_checkpointing: false
+  gradient_checkpointing: true
   save_total_limit: 5
   load_best: false
   use_grpo: false
@@ -43,7 +43,8 @@ training:
   use_optuna_optimize: false
   optuna_n_trials: 10
   seed: 42
-  attn_implementation: "flash_attention_2"
+  attn_implementation: "eager"
+  is_gemma: true
 
 
 grpo:
@@ -80,6 +81,10 @@ testing:
   test_dataset: "${paths.data_dir}/test_ru.json"
   output_test_file: "../test.json"
   prompt_for_deepeval: "test_prompt"
+
+wandb:
+  project_name: "Gemma vika train"
+  anonymous: "allow"
 
 
 hydra:

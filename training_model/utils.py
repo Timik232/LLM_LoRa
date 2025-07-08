@@ -42,10 +42,10 @@ def tokens_init(cfg: DictConfig) -> Run:
     wandb.login(key=wb_token)
 
     run = wandb.init(
-        project="Fine-tune on Dataset for game",
+        project=cfg.wandb.project_name,
         job_type="training",
         config=OmegaConf.to_container(cfg, resolve=True),
-        anonymous="allow",
+        anonymous=cfg.wandb.anonymous,
     )
     return run
 

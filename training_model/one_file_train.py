@@ -25,6 +25,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
+    Gemma3ForCausalLM,
 )
 from trl import SFTConfig, SFTTrainer
 
@@ -164,7 +165,6 @@ def data_preparation(
 
         train_dataset = json.loads(train_path.read_text(encoding="utf-8"))
         test_dataset = json.loads(test_path.read_text(encoding="utf-8"))
-    print(train_dataset.keys())
 
     # Use temporary directory for JSON files
     with TemporaryDirectory() as temp_dir:
@@ -244,13 +244,22 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
             llm_int8_threshold=6.0,
             torch_dtype=torch_dtype,
         )
-    model = AutoModelForCausalLM.from_pretrained(
-        cfg.model.model_name,
-        quantization_config=bnb_config,
-        device_map="auto",
-        attn_implementation=cfg.traiining.attn_implementation,
-        use_cache=False,
-    )
+    if cfg.training.is_gemma:
+        model = Gemma3ForCausalLM.from_pretrained(
+            cfg.model.model_name,
+            quantization_config=bnb_config,
+            device_map="auto",
+            attn_implementation=cfg.training.attn_implementation,
+            use_cache=False,
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            cfg.model.model_name,
+            quantization_config=bnb_config,
+            device_map="auto",
+            attn_implementation=cfg.training.attn_implementation,
+            use_cache=False,
+        )
     logging.info("Model loaded")
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.model_name)
     tokenizer.padding_side = "right"
