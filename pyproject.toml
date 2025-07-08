@@ -47,6 +47,7 @@ priority = "explicit"
 
 [tool.ruff]
 select = ["E", "F", "W", "B", "N", "C90"]
+ignore = ["E203", "W605"]
 line-length = 95
 
 

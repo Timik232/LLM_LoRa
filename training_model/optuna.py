@@ -1,7 +1,9 @@
 """
 Hyperparameter optimization script using Optuna and Hydra for your LLM training pipeline.
 
-Place this file (e.g., `hpo_optuna.py`) at your project root. Adjust `TRAIN_MODULE` to the path of your training module (e.g., 'train' if your main file is `train.py`).
+Place this file (e.g., `hpo_optuna.py`) at your project root.
+ Adjust `TRAIN_MODULE` to the path of your training
+ module (e.g., 'train' if your main file is `train.py`).
 """
 
 import importlib
@@ -47,8 +49,8 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
             ]
             cfg: DictConfig = compose(config_name="config", overrides=overrides)
 
-        TRAIN_MODULE = "training_model.one_file_train"
-        module = importlib.import_module(TRAIN_MODULE)
+        train_module = "training_model.one_file_train"
+        module = importlib.import_module(train_module)
         # Предполагается, что функция train возвращает словарь {'eval_loss': float}
         metrics: dict = module.main_train(data_dir, cfg)
         loss = metrics.get("eval_loss")

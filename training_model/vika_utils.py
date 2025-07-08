@@ -77,14 +77,14 @@ def transform_topics(topics: Dict[str, Any]) -> List[Dict[str, str]]:
             - 'output': one of the response strings
     """
     transformed: List[Dict[str, str]] = []
-    LINK_PATTERN = re.compile(r"\b(?:https?|ftp)://[^\s\"'<>(){}|\\^`[\]]+")
+    link_pattern = re.compile(r"\b(?:https?|ftp)://[^\s\"'<>(){}|\\^`[\]]+")
 
     for topic_data in topics.values():
         examples = topic_data.get("examples", [])
         responses = topic_data.get("responses", [])
         for example in examples:
             for response in responses:
-                if not LINK_PATTERN.search(response):
+                if not link_pattern.search(response):
                     transformed.append({"instruction": example, "output": response})
 
     return transformed

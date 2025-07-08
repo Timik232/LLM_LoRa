@@ -84,7 +84,8 @@ def prepare_grpo_data(
                …
             }
           }
-        into a HuggingFace Dataset with fields “prompt” and “correct_actions” (or “correct_answer”).
+        into a HuggingFace Dataset with fields “prompt”
+        and “correct_actions” (or “correct_answer”).
         """
         processed_data = []
         new_dataset = dict(dataset)
@@ -130,7 +131,9 @@ def grpo_train(
         model (AutoModel): LLM model
         tokenizer (AutoTokenizer): LLM tokenizer
         cfg (DictConfig): Configuration object
-        data_preparing_func (Callable): Function used to prepare the data. Should return Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
+        data_preparing_func (Callable): Function used
+            to prepare the data. Should return Tuple[Dataset, Dataset]:
+            Tuple containing train and validation datasets
         reward_func (Callable): Reward function for the grpo
 
     Returns:

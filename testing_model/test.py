@@ -138,7 +138,8 @@ def run_tests(
         test_file (str, optional): Path to save the processed test file.
             Defaults to "test.json".
         test_func (callable, optional): Additional test function to execute on each result.
-            This function should accept the user prompt, LLM's message text and the correct answer.
+            This function should accept the user prompt,
+            LLM's message text and the correct answer.
         use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
 
     Returns:
@@ -181,7 +182,9 @@ def run_tests(
                 passed_test += 1
             except AssertionError as e:
                 logging.error(
-                    f"Test failed for prompt: {prompt}.\n Error: {e}\nModel answer: {model_answer}\nExpected answer: {correct_answer}\n"
+                    f"Test failed for prompt: {prompt}.\n Error: "
+                    f"{e}\nModel answer: {model_answer}\n"
+                    f"Expected answer: {correct_answer}\n"
                 )
 
     total_tests = len(prompts_to_check)
@@ -209,7 +212,8 @@ def test_llm(
             Defaults to "data/test_ru.json".
         test_file (str, optional): Path to save the processed test file.
             Defaults to "test.json".
-        test_func (Optional[List[Callable]]): List of additional test functions to execute on each result.
+        test_func (Optional[List[Callable]]): List of
+            additional test functions to execute on each result.
         llm_url (str, optional): URL of the LLM service. Defaults to "http://localhost:1234/v1/".
         use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
         ollama_client (Optional[ollama.Client]): Ollama client for connection
@@ -260,7 +264,8 @@ def llamacpp_execute_test(
         temperature (float): Параметр температуры для генерации.
 
     Returns:
-        tuple: Кортеж, содержащий словарь с результатами теста и булевое значение (True, если тест пройден).
+        tuple: Кортеж, содержащий словарь с
+        результатами теста и булевое значение (True, если тест пройден).
     """
     formatted_prompt = f"[INST] <<SYS>>\n{system_prompt}\n<</SYS>>\n\n{prompt} [/INST]"
 
@@ -330,7 +335,8 @@ def test_via_llamacpp(
     system_prompt: Optional[str] = None,
 ) -> float:
     """
-    Тестирование GGUF модели через llama.cpp с использованием передаваемой функции тестирования.
+    Тестирование GGUF модели через llama.cpp с
+    использованием передаваемой функции тестирования.
 
     Args:
         model_path (str | bytes): Путь к файлу модели GGUF.

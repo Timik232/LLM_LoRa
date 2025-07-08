@@ -17,11 +17,9 @@ repos:
     rev: v0.1.5
     hooks:
       - id: ruff
-        args: [ --fix, --exit-non-zero-on-fix, --show-fixes, --config=pyproject.toml]
-      - id: ruff-format
+        args: [ --fix, --show-fixes, --config=pyproject.toml]
 
   - repo: https://github.com/psf/black
     rev: 23.1.0
     hooks:
       - id: black
-        args: [--fast]

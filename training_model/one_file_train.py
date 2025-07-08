@@ -411,7 +411,8 @@ def convert_to_gguf(
         logging.error(
             f"GGUF conversion failed. Check:\n"
             f"- llama.cpp exists at {cfg.paths.llama_cpp_dir}\n"
-            f"- Conversion script exists: {os.path.join(cfg.paths.llama_cpp_dir, 'convert_hf_to_gguf.py')}\n"
+            f"- Conversion script exists: "
+            f"{os.path.join(cfg.paths.llama_cpp_dir, 'convert_hf_to_gguf.py')}\n"
             f"- Python executable: {python_exe}\n"
             f"- Model path: {model_path}"
         )

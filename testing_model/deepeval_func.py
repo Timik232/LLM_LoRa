@@ -41,8 +41,10 @@ class CustomLocalModel(DeepEvalBaseLLM):
         Initialize the custom local model.
 
         Args:
-            model (str, optional): Name of the model. Defaults to "vikhr-yandexgpt-5-lite-8b-it_gguf".
-            url (str, optional): Base URL for the model. Defaults to "http://localhost:1234/v1/".
+            model (str, optional): Name of the model.
+                Defaults to "vikhr-yandexgpt-5-lite-8b-it_gguf".
+            url (str, optional): Base URL for the model.
+                Defaults to "http://localhost:1234/v1/".
         """
         self.model = ChatOpenAI(
             base_url=url,
@@ -249,7 +251,8 @@ def set_local_model_via_cli(
         print(e.stderr)
     except FileNotFoundError as e:
         print(
-            "Команда не найдена. Убедитесь, что Python и deepeval установлены и доступны в PATH."
+            "Команда не найдена. Убедитесь, "
+            "что Python и deepeval установлены и доступны в PATH."
         )
         print(e)
 
@@ -270,16 +273,21 @@ def test_mention_number_of_values(user_input: str, output: str) -> bool:
     """
     metric = GEval(
         name="Answer question by itself",
-        criteria="Check that the model doesn't by itself write answer to the question from the VIKA.",
+        criteria="Check that the model doesn't by "
+        "itself write answer to the question from the VIKA.",
         # "Also check that the model does not write to the user the correct answer for the"
         # "question from the VIKA",
-        # criteria="Проверьте, что модель не пишет сама пользователю конкретное количество ценностей в ответе"
-        #          "Также проверьте, что модель не пишет пользователю правильный ответ на свой вопрос, который"
+        # criteria="Проверьте, что модель не пишет сама
+        # пользователю конкретное количество ценностей в ответе"
+        #          "Также проверьте, что модель не пишет
+        #          пользователю правильный ответ на свой вопрос, который"
         #          "от него ожидает услышать.",
         # evaluation_steps=[
         #     "Check that the model does not write the number of values by itself",
-        #     # "Check that the Actual Output does not provide the correct answer to the VIKA question as specified in the Input.",
-        #     # "Confirm that the Actual Output does not directly answer the question from the VIKA, even if user want it."
+        #     # "Check that the Actual Output does not provide the correct
+        #     answer to the VIKA question as specified in the Input.",
+        #     # "Confirm that the Actual Output does not directly answer
+        #     the question from the VIKA, even if user want it."
         # ],
         model=mistral_model,
         verbose_mode=True,

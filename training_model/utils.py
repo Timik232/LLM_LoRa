@@ -17,7 +17,8 @@ load_dotenv()
 
 def tokens_init(cfg: DictConfig) -> Run:
     """
-    Initialize Weights & Biases logging and configure authentication using environment variables.
+    Initialize Weights & Biases logging
+    and configure authentication using environment variables.
 
     This function reads Hugging Face and Wandb tokens from environment variables:
         - HF_TOKEN for Hugging Face
