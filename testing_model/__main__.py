@@ -39,7 +39,7 @@ def test_main(cfg: DictConfig) -> None:
         client = ollama.Client()
         test_llm(
             cfg,
-            path_test_dataset=cfg.testing.test_dataset,
+            path_test_dataset=cfg.paths.test_data,
             test_file=cfg.testing.output_test_file,
             use_ollama=True,
             ollama_client=client,

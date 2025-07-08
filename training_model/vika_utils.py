@@ -1,39 +1,24 @@
 """
 Module with utility functions for training the model.
 """
+
 import json
+import re
+from pathlib import Path
 from typing import Any, Dict, List
 
 
-def get_user_prompt(data: Dict[str, Any]) -> str:
+def get_user_prompt(data: str) -> str:
     """
     Construct a user prompt from conversation data.
 
     Args:
-        data (Dict[str, Any]): Dictionary containing conversation history and metadata:
-            - History: List of previous messages
-            - AvailableActions: List of available actions
-            - UserInput: Current user input
+        data (str): conversation data
 
     Returns:
         str: Formatted prompt string with conversation context.
     """
-    prompt = (
-        "Системное сообщение, которому ты должен следовать, отмечено словом 'system'. "
-        "Предыдущие сообщения пользователя отмечены словом 'user'. "
-        "Твои предыдущие сообщения отмечены словом 'VIKA'."
-        "\n\nИстория сообщений:"
-    )
-    for message in data.get("History", []):
-        prompt += f"\n{message}"
-    prompt += (
-        "\n\nТы можешь совершать только действия из представленного списка.\n"
-        f"Доступные действия: Разговор, {', '.join(data.get('AvailableActions', []))}"
-    )
-    prompt += (
-        "\n\nОтветь на сообщение пользователя, беря во внимания всю предыдущую информацию.\n"
-        f"Сообщение пользователя: {data.get('UserInput', '')}"
-    )
+    prompt = f"Ответь на вопрос пользователя коротко: {data}"
     return prompt
 
 
@@ -58,10 +43,10 @@ def dataset_to_json(dataset: Dict[str, Any], filename: str) -> List[Dict[str, st
     with open(filename, "w", encoding="utf-8"):
         pass
 
-    for _, example in examples.items():
+    for example in examples:
         system_message = system_template
-        user_message = get_user_prompt(example.get("prompt", {}))
-        bot_message = str(example.get("answer", ""))
+        user_message = get_user_prompt(example.get("instruction", {}))
+        bot_message = str(example.get("output", ""))
 
         json_object = {
             "system": system_message,
@@ -70,8 +55,57 @@ def dataset_to_json(dataset: Dict[str, Any], filename: str) -> List[Dict[str, st
         }
         json_objects.append(json_object)
 
-        # Append JSON object per line
         with open(filename, "a", encoding="utf-8") as f:
             f.write(json.dumps(json_object, ensure_ascii=False) + "\n")
 
     return json_objects
+
+
+def transform_topics(topics: Dict[str, Any]) -> List[Dict[str, str]]:
+    """
+    Transforms a dictionary of topics with examples and responses into
+    a list of dictionaries with 'instruction' and 'output' keys.
+
+    Args:
+        topics (Dict[str, Any]): A dictionary where each key is a topic ID
+            and each value is a dict containing 'examples' (list of str)
+            and 'responses' (list of str).
+
+    Returns:
+        List[Dict[str, str]]: A list of dictionaries, each containing:
+            - 'instruction': one of the example strings
+            - 'output': one of the response strings
+    """
+    transformed: List[Dict[str, str]] = []
+    LINK_PATTERN = re.compile(r"\b(?:https?|ftp)://[^\s\"'<>(){}|\\^`[\]]+")
+
+    for topic_data in topics.values():
+        examples = topic_data.get("examples", [])
+        responses = topic_data.get("responses", [])
+        for example in examples:
+            for response in responses:
+                if not LINK_PATTERN.search(response):
+                    transformed.append({"instruction": example, "output": response})
+
+    return transformed
+
+
+def do_transform():
+    """One run function to convert the dataset."""
+    base_dir = Path(__file__).resolve().parent.parent
+
+    input_file_path = base_dir / "data" / "intents_dataset.json"
+    with input_file_path.open("r", encoding="utf-8") as f:
+        input_json = json.load(f)
+
+    result = transform_topics(input_json)
+
+    output_file_path = base_dir / "data" / "intent_responses.json"
+    with output_file_path.open("w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=4)
+
+    print("Converted to the new format")
+
+
+if __name__ == "__main__":
+    do_transform()

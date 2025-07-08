@@ -5,9 +5,8 @@ defaults:
 
 
 model:
-  model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
-  dataset_name: "${paths.data_dir}/dataset_ru.json"
-  new_model: "vikhr8b-chat-vika"
+  model_name: "google/gemma-3-4b-it"
+  new_model: "4b-chat-vika"
   torch_dtype: "float16"
   attn_implementation: "eager"
   train_steps: 60
@@ -24,25 +23,28 @@ model:
 training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
-  gradient_accumulation_steps: 4
-  num_train_epochs: 1
+  gradient_accumulation_steps: 6
+  num_train_epochs: 2
   eval_steps: 25
   logging_steps: 5
   warmup_steps: 10
   learning_rate: 2e-5
   fp16: false
-  bf16: false
+  bf16: true
   weight_decay: 0.05
   max_seq_length: 2048
   optim: "paged_adamw_8bit"
   neftune_noise_alpha: 0
-  gradient_checkpointing: true
+  gradient_checkpointing: false
   save_total_limit: 5
   load_best: false
   use_grpo: false
   use_sft: true
-  use_optuna_optimize: true
+  use_optuna_optimize: false
   optuna_n_trials: 10
+  seed: 42
+  attn_implementation: "flash_attention_2"
+
 
 grpo:
   val_data: "test_ru.json"
@@ -53,6 +55,8 @@ grpo:
 
 paths:
   data_dir: "data"
+  test_data: "test_ru.json"
+  train_data: "dog_dataset.json"
   gguf_directory: custom-model
   merged_model_path: "merged_model_fp16"
   output_dir: "models" # if you change this, change in run_pipeline
@@ -69,8 +73,10 @@ other:
   hf_login: false
 
 testing:
+  use_separate_files: false
+  test_split_ratio: 0.1
   manual_lmstudio_test: false # use only for local run
-  test: true
+  test: false
   test_dataset: "${paths.data_dir}/test_ru.json"
   output_test_file: "../test.json"
   prompt_for_deepeval: "test_prompt"

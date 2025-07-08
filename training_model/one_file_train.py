@@ -8,8 +8,9 @@ import os
 import shutil
 import subprocess
 from contextlib import contextmanager
+from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable, Dict, Generator, Tuple
+from typing import Any, Callable, Dict, Generator, List, Tuple
 
 import requests
 import torch
@@ -18,6 +19,7 @@ from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 from peft import LoraConfig, PeftModel, get_peft_model
 from requests.auth import HTTPBasicAuth
+from sklearn.model_selection import train_test_split
 from torch import Tensor
 from transformers import (
     AutoModelForCausalLM,
@@ -30,7 +32,8 @@ import wandb
 
 from .grpo_train import grpo_train
 from .logging_config import configure_logging
-from .utils import dataset_to_json, tokens_init
+from .utils import tokens_init
+from .vika_utils import dataset_to_json
 
 
 @contextmanager
@@ -137,13 +140,31 @@ def data_preparation(
     Returns:
         Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
     """
-    data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
-    with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
-        test_dataset = json.load(file)
-    with open(
-        os.path.join(get_original_cwd(), cfg.model.dataset_name), "r", encoding="utf-8"
-    ) as file:
-        train_dataset = json.load(file)
+    base = Path(get_original_cwd()) / cfg.paths.data_dir
+    if not cfg.testing.use_separate_files:
+        single_path = base / cfg.paths.train_data
+        raw = json.loads(single_path.read_text(encoding="utf-8"))
+        all_items: List[dict]
+        if isinstance(raw, dict) and "examples" in raw:
+            all_items = raw["examples"]
+        else:
+            raise ValueError(f"Unrecognized JSON structure in {single_path}")
+        list_train, list_test = train_test_split(
+            all_items,
+            test_size=cfg.testing.test_split_ratio,
+            shuffle=True,
+            random_state=cfg.training.seed,
+        )
+        train_dataset = {"system": raw["system"], "examples": list_train}
+        test_dataset = {"system": raw["system"], "examples": list_test}
+
+    else:
+        train_path = base / cfg.paths.train_file
+        test_path = base / cfg.paths.test_file
+
+        train_dataset = json.loads(train_path.read_text(encoding="utf-8"))
+        test_dataset = json.loads(test_path.read_text(encoding="utf-8"))
+    print(train_dataset.keys())
 
     # Use temporary directory for JSON files
     with TemporaryDirectory() as temp_dir:
@@ -227,6 +248,7 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
         cfg.model.model_name,
         quantization_config=bnb_config,
         device_map="auto",
+        attn_implementation=cfg.traiining.attn_implementation,
         use_cache=False,
     )
     logging.info("Model loaded")
