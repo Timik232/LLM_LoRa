@@ -27,6 +27,11 @@ RUN python3.11 -m ensurepip && python3.11 -m pip install --upgrade pip
 
 RUN pip install --upgrade --ignore-installed wheel==0.45.1
 
+WORKDIR /llama.cpp
+RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
+    cmake -B build && \
+    cmake --build build --config Release \
+
 WORKDIR /training_model
 COPY pyproject.toml poetry.lock ./
 RUN pip install poetry && poetry config virtualenvs.create false && poetry install --no-root --only main
@@ -35,11 +40,6 @@ COPY training_model ./training_model
 COPY testing_model ./testing_model
 COPY data ./data
 COPY main.py .
-
-WORKDIR /llama.cpp
-RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
-    cmake -B build && \
-    cmake --build build --config Release
 
 WORKDIR /training_model
 COPY run_pipeline.sh .

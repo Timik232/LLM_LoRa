@@ -244,20 +244,29 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
             llm_int8_threshold=6.0,
             torch_dtype=torch_dtype,
         )
-    if cfg.training.is_gemma:
+    if cfg.model.model_type == "gemma":
         model = Gemma3ForCausalLM.from_pretrained(
             cfg.model.model_name,
             quantization_config=bnb_config,
             device_map="auto",
-            attn_implementation=cfg.training.attn_implementation,
+            attn_implementation=cfg.model.attn_implementation,
             use_cache=False,
         )
+    elif cfg.model.model_type == "gemma3n":
+        pass
+        # model = Gemma3nForConditionalGeneration.from_pretrained(
+        #     cfg.model.model_name,
+        #     quantization_config=bnb_config,
+        #     device_map="auto",
+        #     attn_implementation=cfg.model.attn_implementation,
+        #     use_cache=False,
+        # )
     else:
         model = AutoModelForCausalLM.from_pretrained(
             cfg.model.model_name,
             quantization_config=bnb_config,
             device_map="auto",
-            attn_implementation=cfg.training.attn_implementation,
+            attn_implementation=cfg.model.attn_implementation,
             use_cache=False,
         )
     logging.info("Model loaded")

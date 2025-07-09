@@ -7,7 +7,7 @@ defaults:
 model:
   model_name: "google/gemma-3-4b-it"
   new_model: "4b-chat-vika"
-  torch_dtype: "float16"
+  torch_dtype: "bfloat16"
   attn_implementation: "eager"
   train_steps: 60
   outfile: "custom-model.gguf" # if you change this, change the model in run_pipeline
@@ -19,13 +19,14 @@ model:
     r: 16
     alpha: 32
     dropout: 0.1
+  model_type: "gemma" # gemma or gemma3n or auto
 
 training:
-  per_device_train_batch_size: 2
-  per_device_eval_batch_size: 2
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
   gradient_accumulation_steps: 6
-  num_train_epochs: 2
-  eval_steps: 25
+  num_train_epochs: 1
+  eval_steps: 50
   logging_steps: 5
   warmup_steps: 10
   learning_rate: 2e-5
@@ -43,8 +44,6 @@ training:
   use_optuna_optimize: false
   optuna_n_trials: 10
   seed: 42
-  attn_implementation: "eager"
-  is_gemma: true
 
 
 grpo:

@@ -28,6 +28,7 @@ huggingface-hub = "^0.29.3"
 llama-cpp-python = {version = "^0.3.8", extras = ["cublas"] }
 scipy = "^1.15.2"
 ollama = "^0.4.7"
+ninja = "^1.11.1.4"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -42,7 +43,7 @@ optuna = "^4.4.0"
 
 [[tool.poetry.source]]
 name = "torch-cuda"
-url = "https://download.pytorch.org/whl/cu118"
+url = "https://download.pytorch.org/whl/cu124"
 priority = "explicit"
 
 [tool.ruff]
