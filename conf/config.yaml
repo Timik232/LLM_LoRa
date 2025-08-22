@@ -3,9 +3,10 @@ defaults:
   - override hydra/job_logging: disabled  # Properly override Hydra's logging
   - override hydra/hydra_logging: disabled
 
+logging_backend: "wandb"
 
 model:
-  model_name: "google/gemma-3-4b-it"
+  model_name: "RefalMachine/RuadaptQwen3-4B-Instruct"
   new_model: "4b-chat-vika"
   torch_dtype: "bfloat16"
   attn_implementation: "eager"
@@ -19,13 +20,13 @@ model:
     r: 16
     alpha: 32
     dropout: 0.1
-  model_type: "gemma" # gemma or gemma3n or auto
+  model_type: "auto" # gemma or gemma3n or auto
 
 training:
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
   gradient_accumulation_steps: 6
-  num_train_epochs: 1
+  num_train_epochs: 1.1
   eval_steps: 50
   logging_steps: 5
   warmup_steps: 10
@@ -85,6 +86,9 @@ wandb:
   project_name: "Gemma vika train"
   anonymous: "allow"
 
+mlflow:
+  experiment_name: "vika-experiment"
+  tracking_uri: "http://127.0.0.1:5000"
 
 hydra:
   run:
