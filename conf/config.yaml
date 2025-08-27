@@ -3,7 +3,6 @@ defaults:
   - override hydra/job_logging: disabled  # Properly override Hydra's logging
   - override hydra/hydra_logging: disabled
 
-logging_backend: "wandb"
 
 model:
   model_name: "RefalMachine/RuadaptQwen3-4B-Instruct"
@@ -82,13 +81,17 @@ testing:
   output_test_file: "../test.json"
   prompt_for_deepeval: "test_prompt"
 
-wandb:
-  project_name: "Gemma vika train"
-  anonymous: "allow"
+logging:
+  logging_backend: "mlflow"
 
-mlflow:
-  experiment_name: "vika-experiment"
-  tracking_uri: "http://127.0.0.1:5000"
+  wandb:
+    project_name: "Gemma vika train"
+    anonymous: "allow"
+
+  mlflow:
+    experiment_name: "vika-experiment"
+    tracking_uri: "http://127.0.0.1:5000"
+
 
 hydra:
   run:

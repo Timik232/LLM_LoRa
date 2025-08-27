@@ -29,6 +29,7 @@ llama-cpp-python = { version = "^0.3.8,<0.3.15", extras = ["cublas"] }
 scipy = "^1.15.2"
 ollama = "^0.4.7"
 ninja = "^1.11.1.4"
+mlflow = "^3.3.1"
 
 
 [tool.poetry.group.dev.dependencies]

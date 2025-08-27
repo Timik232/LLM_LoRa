@@ -40,8 +40,9 @@ def tokens_init(cfg: DictConfig) -> Run:
     wb_token = os.getenv("WANB_API")
     if wb_token is None:
         raise EnvironmentError("Environment variable 'WANB_API' is not set.")
-    wandb.login(key=wb_token)
+    # wandb.login(key=wb_token)
 
+    print(wb_token)
     run = wandb.init(
         project=cfg.wandb.project_name,
         job_type="training",

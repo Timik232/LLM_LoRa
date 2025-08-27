@@ -60,7 +60,8 @@ def init_logging_backend(cfg: DictConfig) -> None:
         None
     """
     global _LOGGING_BACKEND
-    backend = getattr(cfg, "logging_backend", None)
+    log_dict = getattr(cfg, "logging", {})
+    backend = getattr(log_dict, "logging_backend", None)
     if backend is None:
         backend = "wandb" if getattr(cfg, "wandb", None) else "none"
     backend = str(backend).lower()
@@ -68,7 +69,7 @@ def init_logging_backend(cfg: DictConfig) -> None:
 
     if backend == "wandb":
         try:
-            wb_cfg = getattr(cfg, "wandb", None) or {}
+            wb_cfg = getattr(log_dict, "wandb", None) or {}
             project = getattr(wb_cfg, "project_name", None)
             anonymous = getattr(wb_cfg, "anonymous", None)
             init_kwargs: Dict[str, Any] = {}
@@ -86,7 +87,7 @@ def init_logging_backend(cfg: DictConfig) -> None:
         try:
             import mlflow  # type: ignore
 
-            ml_cfg = getattr(cfg, "mlflow", None) or {}
+            ml_cfg = getattr(log_dict, "mlflow", None) or {}
             experiment = getattr(ml_cfg, "experiment_name", "default")
             tracking_uri = getattr(ml_cfg, "tracking_uri", None)
             if tracking_uri:
