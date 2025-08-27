@@ -1,4 +1,4 @@
-"""File for testing llm model"""
+"""Model evaluation tools for LLM LoRa training framework"""
 
 import json
 import logging
@@ -10,11 +10,43 @@ from llama_cpp import Llama
 from omegaconf import DictConfig
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
+from evaluation.game_evaluation import test_actions
 
-from training_model.utils import get_user_prompt
 
-# from .deepeval_func import test_mention_number_of_values
-from .functions_to_test_game import test_actions
+# Moved get_user_prompt here to avoid circular import
+def get_user_prompt(data: Dict[str, Any]) -> str:
+    """
+    Construct a user prompt from conversation data.
+
+    Args:
+        data (Dict[str, Any]): Dictionary containing conversation history and metadata:
+            - History: List of previous messages
+            - AvailableActions: List of available actions
+            - UserInput: Current user input
+
+    Returns:
+        str: Formatted prompt string with conversation context.
+    """
+    prompt = (
+        "Системное сообщение, которому ты должен следовать, отмечено словом 'system'. "
+        "Предыдущие сообщения пользователя отмечены словом 'user'. "
+        "Твои предыдущие сообщения отмечены словом 'VIKA'."
+        "\n\nИстория сообщений:"
+    )
+    for message in data.get("History", []):
+        prompt += f"\n{message}"
+    prompt += (
+        "\n\nТы можешь совершать только действия из представленного списка.\n"
+        f"Доступные действия: Разговор, {', '.join(data.get('AvailableActions', []))}"
+    )
+    prompt += (
+        "\n\nОтветь на сообщение пользователя, беря во внимания всю предыдущую информацию.\n"
+        f"Сообщение пользователя: {data.get('UserInput', '')}"
+    )
+    return prompt
+
+
+# from evaluation.deepeval_integration import test_mention_number_of_values
 
 ollama.base_url = "http://localhost:11434"
 

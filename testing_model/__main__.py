@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 
 from training_model import configure_logging
 
-from .test import dataset_to_json_for_test, test_llm
+from evaluation.model_evaluation import dataset_to_json_for_test, test_llm
 
 
 @hydra.main(version_base="1.1", config_path="../conf", config_name="config")

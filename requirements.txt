@@ -37,6 +37,7 @@ eval-type-backport==0.2.2 ; python_version >= "3.11" and python_full_version <= 
 execnet==2.1.1 ; python_version >= "3.11" and python_full_version <= "3.13.0"
 fastapi==0.116.1 ; python_version >= "3.11" and python_full_version <= "3.13.0"
 filelock==3.18.0 ; python_version >= "3.11" and python_full_version <= "3.13.0"
+fire==0.7.0 ; python_version >= "3.11" and python_full_version <= "3.13.0"
 flask==3.1.2 ; python_version >= "3.11" and python_full_version <= "3.13.0"
 fonttools==4.59.1 ; python_version >= "3.11" and python_full_version <= "3.13.0"
 frozenlist==1.7.0 ; python_version >= "3.11" and python_full_version <= "3.13.0"

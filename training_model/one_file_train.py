@@ -367,16 +367,15 @@ def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str) -> N
     logging.info("Model merged")
 
 
-def train(cfg: DictConfig) -> dict[str, int | Any]:
-    """Execute full training pipeline.
+def setup_model_and_tokenizer(cfg: DictConfig) -> Tuple[Any, AutoTokenizer]:
+    """Set up model and tokenizer with quantization config.
 
     Args:
         cfg: Configuration object.
 
     Returns:
-        A dict with 'global_steps' and 'eval_loss'.
+        Tuple of (model, tokenizer).
     """
-    # tokens_init(cfg)
     torch_dtype = (
         getattr(torch, cfg.model.torch_dtype)
         if isinstance(cfg.model.torch_dtype, str)
@@ -431,6 +430,28 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
                 tokenizer.pad_token
             )
     model.resize_token_embeddings(len(tokenizer))
+    return model, tokenizer
+
+
+def run_sft_training(
+    model: Any,
+    tokenizer: AutoTokenizer,
+    cfg: DictConfig,
+    train_data: Dataset,
+    val_data: Dataset,
+) -> Tuple[int, float]:
+    """Run SFT training phase.
+
+    Args:
+        model: The model to train.
+        tokenizer: The tokenizer.
+        cfg: Configuration object.
+        train_data: Training dataset.
+        val_data: Validation dataset.
+
+    Returns:
+        Tuple of (global_steps, eval_loss).
+    """
     peft_config = LoraConfig(
         r=cfg.model.lora.r,
         lora_alpha=cfg.model.lora.alpha,
@@ -449,7 +470,73 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
         modules_to_save=["lm_head"],
         inference_mode=False,
     )
-    # model = get_peft_model(model, peft_config)
+
+    logging.info("Starting SFT training phase...")
+    sft_config = SFTConfig(
+        output_dir=cfg.model.new_model,
+        max_length=cfg.training.max_seq_length,
+        dataset_kwargs={"skip_prepare_dataset": True},
+        packing=False,
+        run_name=cfg.model.new_model,
+        per_device_train_batch_size=cfg.training.per_device_train_batch_size,
+        per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
+        gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
+        gradient_checkpointing=cfg.training.gradient_checkpointing,
+        optim=cfg.training.optim,
+        num_train_epochs=cfg.training.num_train_epochs,
+        eval_strategy="steps",
+        eval_steps=cfg.training.eval_steps,
+        logging_steps=cfg.training.logging_steps,
+        warmup_steps=cfg.training.warmup_steps,
+        logging_strategy="steps",
+        learning_rate=cfg.training.learning_rate,
+        fp16=cfg.training.fp16,
+        bf16=cfg.training.bf16,
+        weight_decay=cfg.training.weight_decay,
+        neftune_noise_alpha=cfg.training.neftune_noise_alpha,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        group_by_length=True,
+        report_to="none",
+        save_total_limit=cfg.training.save_total_limit,
+        load_best_model_at_end=cfg.training.load_best,
+    )
+    if cfg.training.use_optuna_optimize:
+        sft_config.run_name = f"{sft_config.run_name}_optuna"
+
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=train_data,
+        eval_dataset=val_data,
+        peft_config=peft_config,
+        processing_class=tokenizer,
+        args=sft_config,
+    )
+    trainer.train()
+    global_steps = trainer.state.global_step
+    eval_results = trainer.evaluate()
+    eval_loss = eval_results["eval_loss"]
+    logging.info(
+        f"SFT completed. Global steps: {global_steps}, Evaluation loss: {eval_loss}"
+    )
+
+    # Clean up SFT trainer to free memory before GRPO
+    del trainer
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    return global_steps, eval_loss
+
+
+def train(cfg: DictConfig) -> dict[str, int | Any]:
+    """Execute full training pipeline.
+
+    Args:
+        cfg: Configuration object.
+
+    Returns:
+        A dict with 'global_steps' and 'eval_loss'.
+    """
+    model, tokenizer = setup_model_and_tokenizer(cfg)
     train_data, val_data = data_preparation(cfg, tokenizer)
     logging.info("Data prepared")
 
@@ -460,59 +547,9 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
 
     # Phase 1: Supervised Fine-Tuning (SFT)
     if cfg.training.use_sft:
-        logging.info("Starting SFT training phase...")
-        sft_config = SFTConfig(
-            output_dir=cfg.model.new_model,
-            max_length=cfg.training.max_seq_length,
-            dataset_kwargs={"skip_prepare_dataset": True},
-            packing=False,
-            run_name=cfg.model.new_model,
-            per_device_train_batch_size=cfg.training.per_device_train_batch_size,
-            per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
-            gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
-            gradient_checkpointing=cfg.training.gradient_checkpointing,
-            # max_steps=cfg.model.train_steps,
-            optim=cfg.training.optim,
-            num_train_epochs=cfg.training.num_train_epochs,
-            eval_strategy="steps",
-            eval_steps=cfg.training.eval_steps,
-            logging_steps=cfg.training.logging_steps,
-            warmup_steps=cfg.training.warmup_steps,
-            logging_strategy="steps",
-            learning_rate=cfg.training.learning_rate,
-            fp16=cfg.training.fp16,
-            bf16=cfg.training.bf16,
-            weight_decay=cfg.training.weight_decay,
-            neftune_noise_alpha=cfg.training.neftune_noise_alpha,
-            gradient_checkpointing_kwargs={"use_reentrant": False},
-            group_by_length=True,
-            report_to="none",
-            save_total_limit=cfg.training.save_total_limit,
-            load_best_model_at_end=cfg.training.load_best,
+        global_steps, eval_loss = run_sft_training(
+            model, tokenizer, cfg, train_data, val_data
         )
-        if cfg.training.use_optuna_optimize:
-            sft_config.run_name = f"{sft_config.run_name}_optuna"
-
-        trainer = SFTTrainer(
-            model=model,
-            train_dataset=train_data,
-            eval_dataset=val_data,
-            peft_config=peft_config,
-            processing_class=tokenizer,
-            args=sft_config,
-        )
-        trainer.train()
-        global_steps = trainer.state.global_step
-        eval_results = trainer.evaluate()
-        eval_loss = eval_results["eval_loss"]
-        logging.info(
-            f"SFT completed. Global steps: {global_steps}, Evaluation loss: {eval_loss}"
-        )
-
-        # Clean up SFT trainer to free memory before GRPO
-        del trainer
-        gc.collect()
-        torch.cuda.empty_cache()
         training_completed = True
 
     # Phase 2: Group Relative Policy Optimization (GRPO)
@@ -578,6 +615,11 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
             ref_model_name = getattr(cfg.dpo, "ref_model_name", cfg.model.model_name)
             logging.info(f"Loading reference model: {ref_model_name}")
             # Load reference model with same configuration as the main model
+            torch_dtype = (
+                getattr(torch, cfg.model.torch_dtype)
+                if isinstance(cfg.model.torch_dtype, str)
+                else cfg.model.torch_dtype
+            )
             if cfg.model.model_type == "gemma":
                 ref_model = Gemma3ForCausalLM.from_pretrained(
                     ref_model_name,

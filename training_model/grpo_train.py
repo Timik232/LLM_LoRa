@@ -230,11 +230,14 @@ def prepare_grpo_data(
                 prompt_parts.append(f"User: {user_input}")
 
             # Add explicit JSON output instruction
-            prompt_parts.append(
-                "Assistant: You must respond with a valid JSON object in the following format: "
-                '{"Content": {"Action": "<your_chosen_action>"}}. '
+            json_instruction = (
+                "Assistant: You must respond with a valid JSON object in the "
+                'following format: {"Content": {"Action": "<your_chosen_action>"}}'
+            )
+            action_instruction = (
                 "Choose the most appropriate action from the available actions."
             )
+            prompt_parts.append(f"{json_instruction}. {action_instruction}")
 
             # Join all parts with double newlines for clarity
             prompt_str = "\n\n".join(prompt_parts)

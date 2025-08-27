@@ -2,17 +2,14 @@ import json
 import logging
 import os
 
-import hydra
-from hydra.utils import get_original_cwd
+from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
 
-from testing_model import test_llm
-from testing_model.test import dataset_to_json_for_test
+from evaluation.model_evaluation import dataset_to_json_for_test, test_llm
 
 from . import configure_logging, main_train, optuna_optimize
 
 
-@hydra.main(version_base="1.1", config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     """
     Main entry point for model training and testing workflow.
@@ -37,7 +34,8 @@ def main(cfg: DictConfig) -> None:
     - Optionally runs model testing via LM Studio
     """
     configure_logging(logging.DEBUG)
-    data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
+    # Use current working directory since get_original_cwd() requires Hydra decorator
+    data_dir = os.path.join(os.getcwd(), cfg.paths.data_dir)
     if cfg.training.use_optuna_optimize:
         optuna_optimize(data_dir, cfg)
     else:
@@ -55,5 +53,18 @@ def main(cfg: DictConfig) -> None:
         )
 
 
+def legacy_main():
+    """
+    Legacy main function that loads config with Hydra decorator.
+    Kept for backward compatibility but no longer used as primary entry point.
+    """
+    config_dir = os.path.join(os.getcwd(), "conf")
+    config_dir = os.path.abspath(config_dir)
+
+    with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
+        cfg = compose(config_name="config")
+        main(cfg)
+
+
 if __name__ == "__main__":
-    main()
+    legacy_main()

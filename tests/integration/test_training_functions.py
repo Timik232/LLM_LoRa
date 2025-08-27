@@ -1,4 +1,4 @@
-"""pytest suite for training_model.one_file_train functions.
+"""Integration tests for training_model.one_file_train functions.
 
 Uses built-in monkeypatch fixture (no pytest-mock dependency).
 """

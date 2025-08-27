@@ -1,4 +1,4 @@
-"""File for the testing model using deepeval framework"""
+"""DeepEval integration for model evaluation framework"""
 import asyncio
 import json
 import logging
@@ -11,7 +11,7 @@ import requests
 from deepeval import assert_test
 from deepeval.metrics import GEval
 
-# from .test import dataset_to_json_for_test
+# from evaluation.model_evaluation import dataset_to_json_for_test
 from deepeval.models import DeepEvalBaseLLM
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 from dotenv import load_dotenv

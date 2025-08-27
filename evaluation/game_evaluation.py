@@ -1,3 +1,4 @@
+"""Game evaluation functions for model testing"""
 import json
 from json import JSONDecodeError
 
