@@ -32,6 +32,7 @@ from trl import SFTConfig, SFTTrainer
 import wandb
 
 from .grpo_train import grpo_train
+from .dpo_train import dpo_train
 from .logging_config import configure_logging
 from .vika_utils import dataset_to_json
 
@@ -205,21 +206,58 @@ def generate_and_tokenize_prompt(
         data_point: Dictionary containing conversation data.
         tokenizer: Hugging Face tokenizer.
         cutoff: Maximum sequence length.
-        should_add_prompt: used for grpo, when needed dict with keyword "prompt" returned.
+        should_add_prompt: Used for GRPO, when needed dict with keyword "prompt" returned.
 
     Returns:
         Tokenized prompt dictionary or a dict containing "prompt" when should_add_prompt=True.
     """
-    full_prompt = generate_prompt(tokenizer, data_point)
-    tokenized_full_prompt = tokenize(
-        tokenizer,
-        cutoff,
-        full_prompt,
-    )
     if should_add_prompt:
-        return {"prompt": full_prompt, "correct_answer": data_point["bot"]}
+        # Enhanced prompt for GRPO training with JSON output instruction
+        enhanced_prompt = generate_grpo_prompt(tokenizer, data_point)
+        return {"prompt": enhanced_prompt, "correct_answer": data_point["bot"]}
     else:
+        # Standard SFT prompt
+        full_prompt = generate_prompt(tokenizer, data_point)
+        tokenized_full_prompt = tokenize(
+            tokenizer,
+            cutoff,
+            full_prompt,
+        )
         return tokenized_full_prompt
+
+
+def generate_grpo_prompt(tokenizer: AutoTokenizer, data_point: Dict[str, str]) -> str:
+    """Generate an enhanced prompt for GRPO training with JSON output instruction.
+
+    Args:
+        tokenizer: Hugging Face tokenizer.
+        data_point: Dictionary containing system, user and bot messages.
+
+    Returns:
+        Enhanced prompt string with JSON instruction.
+    """
+    # Start with the standard chat template
+    messages = [
+        {"role": "system", "content": data_point["system"]},
+        {"role": "user", "content": data_point["user"]},
+    ]
+
+    # Add JSON instruction to the user message
+    enhanced_user_content = (
+        f"{data_point['user']}\n\n"
+        "Please respond with a valid JSON object in the following format: "
+        '{"Content": {"Action": "<your_action>"}}. '
+        "Choose the most appropriate action based on the context."
+    )
+
+    messages[1]["content"] = enhanced_user_content
+
+    # Apply chat template without the assistant response (for GRPO generation)
+    return tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,  # This adds the assistant prompt without response
+    )
 
 
 def data_preparation(
@@ -239,7 +277,12 @@ def data_preparation(
     Returns:
         Tuple containing train and validation datasets.
     """
-    base = Path(get_original_cwd()) / cfg.paths.data_dir
+    # Use current working directory or the configured data directory
+    try:
+        base = Path(get_original_cwd()) / cfg.paths.data_dir
+    except ValueError:
+        # Fallback if Hydra context is not available
+        base = Path(os.getcwd()) / cfg.paths.data_dir
     if not cfg.testing.use_separate_files:
         single_path = base / cfg.paths.train_data
         raw = json.loads(single_path.read_text(encoding="utf-8"))
@@ -409,9 +452,15 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
     # model = get_peft_model(model, peft_config)
     train_data, val_data = data_preparation(cfg, tokenizer)
     logging.info("Data prepared")
+
+    # Initialize training state tracking
     global_steps = 0
     eval_loss = 0.0
+    training_completed = False
+
+    # Phase 1: Supervised Fine-Tuning (SFT)
     if cfg.training.use_sft:
+        logging.info("Starting SFT training phase...")
         sft_config = SFTConfig(
             output_dir=cfg.model.new_model,
             max_length=cfg.training.max_seq_length,
@@ -453,28 +502,149 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
             args=sft_config,
         )
         trainer.train()
-        global_steps: int = trainer.state.global_step
+        global_steps = trainer.state.global_step
         eval_results = trainer.evaluate()
         eval_loss = eval_results["eval_loss"]
-        logging.info(f"Evaluation loss: {eval_loss}")
+        logging.info(
+            f"SFT completed. Global steps: {global_steps}, Evaluation loss: {eval_loss}"
+        )
+
+        # Clean up SFT trainer to free memory before GRPO
+        del trainer
+        gc.collect()
+        torch.cuda.empty_cache()
+        training_completed = True
+
+    # Phase 2: Group Relative Policy Optimization (GRPO)
     if cfg.training.use_grpo:
-        grpo_train(
+        logging.info("Starting GRPO training phase...")
+
+        # If both SFT and GRPO are enabled, load the best checkpoint from SFT
+        if cfg.training.use_sft and training_completed:
+            logging.info("Loading SFT checkpoint for GRPO training...")
+            checkpoint_path = os.path.join(
+                cfg.model.new_model, f"checkpoint-{global_steps}"
+            )
+            if os.path.exists(checkpoint_path):
+                # Load the adapter weights into the model
+                model = PeftModel.from_pretrained(model, checkpoint_path)
+                logging.info(f"Loaded SFT checkpoint from {checkpoint_path}")
+            else:
+                logging.warning(
+                    f"SFT checkpoint not found at {checkpoint_path}, "
+                    "continuing with current model state"
+                )
+
+        grpo_steps = grpo_train(
             model=model,
             tokenizer=tokenizer,
             cfg=cfg,
             data_preparing_func=None,
         )
-    if not cfg.training.use_grpo and not cfg.training.use_sft:
-        logging.warning("Model training not configured")
-    else:
-        logging.info("Model trained")
 
-    merge_adapter_from_checkpoint(
-        base_model_name=cfg.model.model_name,
-        adapter_dir=os.path.join(cfg.model.new_model, f"checkpoint-{global_steps}"),
-        save_path=cfg.paths.output_dir,
-        device="cpu",
+        # Update global steps if GRPO was the only training method or ran after SFT
+        if not cfg.training.use_sft:
+            global_steps = grpo_steps
+        else:
+            # If both SFT and GRPO ran, use GRPO steps as the final checkpoint
+            global_steps = grpo_steps
+
+        logging.info(f"GRPO completed. Final global steps: {global_steps}")
+        training_completed = True
+
+    # Phase 3: Direct Preference Optimization (DPO)
+    if cfg.training.use_dpo:
+        logging.info("Starting DPO training phase...")
+
+        # If previous training phases completed, load the best checkpoint
+        if training_completed:
+            logging.info("Loading previous checkpoint for DPO training...")
+            checkpoint_path = os.path.join(
+                cfg.model.new_model, f"checkpoint-{global_steps}"
+            )
+            if os.path.exists(checkpoint_path):
+                # Load the adapter weights into the model
+                model = PeftModel.from_pretrained(model, checkpoint_path)
+                logging.info(f"Loaded checkpoint from {checkpoint_path}")
+            else:
+                logging.warning(
+                    f"Checkpoint not found at {checkpoint_path}, "
+                    "continuing with current model state"
+                )
+
+        # Prepare reference model if specified
+        ref_model = None
+        if getattr(cfg.dpo, "use_ref_model", False):
+            ref_model_name = getattr(cfg.dpo, "ref_model_name", cfg.model.model_name)
+            logging.info(f"Loading reference model: {ref_model_name}")
+            # Load reference model with same configuration as the main model
+            if cfg.model.model_type == "gemma":
+                ref_model = Gemma3ForCausalLM.from_pretrained(
+                    ref_model_name,
+                    device_map="auto",
+                    torch_dtype=torch_dtype,
+                )
+            else:
+                ref_model = AutoModelForCausalLM.from_pretrained(
+                    ref_model_name,
+                    device_map="auto",
+                    torch_dtype=torch_dtype,
+                )
+
+        dpo_steps = dpo_train(
+            model=model,
+            tokenizer=tokenizer,
+            cfg=cfg,
+            data_preparing_func=None,
+            ref_model=ref_model,
+        )
+
+        # Update global steps - DPO is the final training phase
+        global_steps = dpo_steps
+        logging.info(f"DPO completed. Final global steps: {global_steps}")
+        training_completed = True
+
+        # Clean up reference model if it was loaded
+        if ref_model is not None:
+            del ref_model
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    # Validate training completion
+    if (
+        not cfg.training.use_grpo
+        and not cfg.training.use_sft
+        and not cfg.training.use_dpo
+    ):
+        logging.warning("Model training not configured")
+        return {"global_steps": 0, "eval_loss": 0.0}
+    elif not training_completed:
+        logging.error("Training was configured but did not complete successfully")
+        return {"global_steps": 0, "eval_loss": 0.0}
+    else:
+        logging.info("Model training completed successfully")
+
+    # Merge adapter weights from the final checkpoint
+    final_checkpoint_path = os.path.join(
+        cfg.model.new_model, f"checkpoint-{global_steps}"
     )
+    if os.path.exists(final_checkpoint_path):
+        merge_adapter_from_checkpoint(
+            base_model_name=cfg.model.model_name,
+            adapter_dir=final_checkpoint_path,
+            save_path=cfg.paths.output_dir,
+            device="cpu",
+        )
+        logging.info(f"Model merged from checkpoint: {final_checkpoint_path}")
+    else:
+        logging.error(f"Final checkpoint not found at {final_checkpoint_path}")
+        # Still try to save the model in its current state
+        merge_adapter_from_checkpoint(
+            base_model_name=cfg.model.model_name,
+            adapter_dir=cfg.model.new_model,  # Fallback to the output directory
+            save_path=cfg.paths.output_dir,
+            device="cpu",
+        )
     logging.info("Model saved")
     del model
     gc.collect()
@@ -568,6 +738,159 @@ def convert_to_gguf(
         )
 
 
+def convert_to_rkllm(
+    model_path: str,
+    output_dir: str,
+    target_platform: str = "rk3588",
+    quantization: str = "w8a8",
+    do_parallelize: bool = False,
+    hybrid_quantization: bool = False,
+    num_npu_core: int = 1,
+) -> str:
+    """Convert Hugging Face model to RKLLM format for Rockchip NPU.
+
+    Args:
+        model_path: Path to input Hugging Face model directory.
+        output_dir: Directory to save RKLLM model.
+        target_platform: Target Rockchip platform (rk3588, rk3576, etc.).
+        quantization: Quantization type (w8a8, w4a16, w4a16_g128).
+        do_parallelize: Enable model parallelization for larger models.
+        hybrid_quantization: Enable hybrid quantization.
+        num_npu_core: Number of NPU cores to use (1-3).
+
+    Returns:
+        Path to the generated RKLLM model file.
+
+    Raises:
+        RuntimeError: If RKLLM conversion fails.
+        ImportError: If rkllm-toolkit is not available.
+    """
+    try:
+        from rkllm.api import RKLLM
+    except ImportError as e:
+        raise ImportError(
+            "rkllm-toolkit not found. Please install with: pip install rkllm-toolkit"
+        ) from e
+
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Generate output filename based on configuration
+    model_name = os.path.basename(model_path.rstrip("/"))
+    output_filename = f"{model_name}_{target_platform}_{quantization}.rkllm"
+    output_path = os.path.join(output_dir, output_filename)
+
+    logging.info("Converting model to RKLLM format...")
+    logging.info(f"  Source: {model_path}")
+    logging.info(f"  Target platform: {target_platform}")
+    logging.info(f"  Quantization: {quantization}")
+    logging.info(f"  Output: {output_path}")
+
+    try:
+        # Initialize RKLLM converter
+        rkllm = RKLLM()
+
+        # Load model configuration
+        ret = rkllm.load_huggingface(
+            model=model_path, target_platform=target_platform, num_npu_core=num_npu_core
+        )
+
+        if ret != 0:
+            raise RuntimeError(f"Failed to load Hugging Face model: {model_path}")
+
+        # Configure quantization and optimization settings
+        ret = rkllm.build(
+            do_quantization=True,
+            optimization_level=1,
+            quantized_dtype=quantization,
+            target_platform=target_platform,
+            num_npu_core=num_npu_core,
+            do_parallelize=do_parallelize,
+            hybrid_quantization=hybrid_quantization,
+        )
+
+        if ret != 0:
+            raise RuntimeError(
+                f"Failed to build RKLLM model with quantization: {quantization}"
+            )
+
+        # Export the model
+        ret = rkllm.export_rkllm(output_path)
+
+        if ret != 0:
+            raise RuntimeError(f"Failed to export RKLLM model to: {output_path}")
+
+        # Verify the output file exists
+        if not os.path.exists(output_path):
+            raise RuntimeError(f"RKLLM model file was not created: {output_path}")
+
+        file_size = os.path.getsize(output_path) / (1024 * 1024)  # Size in MB
+        logging.info("RKLLM conversion completed successfully")
+        logging.info(f"  Output file: {output_path}")
+        logging.info(f"  File size: {file_size:.2f} MB")
+
+        return output_path
+
+    except Exception as e:
+        logging.error(f"RKLLM conversion failed: {e}")
+        # Clean up partial files
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        raise RuntimeError(f"RKLLM conversion failed: {e}") from e
+
+    finally:
+        # Ensure RKLLM resources are cleaned up
+        try:
+            if "rkllm" in locals():
+                del rkllm
+        except Exception as cleanup_error:
+            logging.warning(f"Failed to cleanup RKLLM resources: {cleanup_error}")
+
+
+def rkllm_quantize(
+    model_path: str,
+    output_path: str,
+    quantization: str = "w8a8",
+    target_platform: str = "rk3588",
+    **kwargs,
+) -> bool:
+    """Quantize model for RKLLM format (integrated within convert_to_rkllm).
+
+    This function is a wrapper that calls convert_to_rkllm with quantization.
+    The actual quantization is performed during the RKLLM conversion process.
+
+    Args:
+        model_path: Path to input model.
+        output_path: Path for quantized output.
+        quantization: Quantization type (w8a8, w4a16, w4a16_g128).
+        target_platform: Target Rockchip platform.
+        **kwargs: Additional parameters for convert_to_rkllm.
+
+    Returns:
+        True if quantization succeeded, False otherwise.
+    """
+    try:
+        output_dir = os.path.dirname(output_path)
+        result_path = convert_to_rkllm(
+            model_path=model_path,
+            output_dir=output_dir,
+            target_platform=target_platform,
+            quantization=quantization,
+            **kwargs,
+        )
+
+        # If output filename is different, rename the file
+        if result_path != output_path and os.path.exists(result_path):
+            shutil.move(result_path, output_path)
+            logging.info(f"RKLLM model moved to: {output_path}")
+
+        return True
+
+    except Exception as e:
+        logging.error(f"RKLLM quantization failed: {e}")
+        return False
+
+
 def quantize_model(
     model_path: str,
     outfile: str,
@@ -647,8 +970,7 @@ def train_pipeline(cfg: DictConfig) -> Dict[str, Any]:
     # initialize optional experiment logging backend (wandb / mlflow / none)
     init_logging_backend(cfg)
     try:
-        # result = train(cfg)
-        result = {"global_steps": 732, "eval_loss": 0.79}
+        result = train(cfg)
         merge_adapter_from_checkpoint(
             base_model_name=cfg.model.model_name,
             adapter_dir=os.path.join(
@@ -693,6 +1015,36 @@ def train_pipeline(cfg: DictConfig) -> Dict[str, Any]:
             else:
                 raise RuntimeError("Quantization failed")
 
+            # RKLLM conversion (if enabled)
+            if getattr(cfg.model, "rkllm", {}).get("enabled", False):
+                logging.info("Starting RKLLM conversion...")
+                try:
+                    rkllm_config = cfg.model.rkllm
+                    rkllm_output_dir = os.path.join(
+                        cfg.paths.output_dir, rkllm_config.output_dir
+                    )
+
+                    rkllm_model_path = convert_to_rkllm(
+                        model_path=cfg.paths.output_dir,  # Use the merged model directory
+                        output_dir=rkllm_output_dir,
+                        target_platform=rkllm_config.target_platform,
+                        quantization=rkllm_config.quantization,
+                        do_parallelize=rkllm_config.get("do_parallelize", False),
+                        hybrid_quantization=rkllm_config.get(
+                            "hybrid_quantization", False
+                        ),
+                        num_npu_core=rkllm_config.get("num_npu_core", 1),
+                    )
+
+                    logging.info(f"RKLLM conversion completed: {rkllm_model_path}")
+
+                except Exception as e:
+                    logging.error(f"RKLLM conversion failed: {e}")
+                    # Don't raise error - RKLLM conversion is optional
+                    logging.info("Continuing without RKLLM conversion...")
+            else:
+                logging.info("RKLLM conversion disabled in configuration")
+
         logging.info("Training pipeline completed")
         return {"eval_loss": eval_loss}
 
@@ -731,5 +1083,4 @@ def post_new_dataset() -> None:
 
 if __name__ == "__main__":
     configure_logging(logging.DEBUG)
-    main_train()
-    # post_new_dataset()
+    post_new_dataset()

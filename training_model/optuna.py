@@ -30,7 +30,10 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
         ValueError: If 'eval_loss' is not present in the training metrics.
     """
     try:
-        GlobalHydra.instance().clear()
+        # Clear any existing Hydra instance
+        if GlobalHydra().is_initialized():
+            GlobalHydra.instance().clear()
+
         lr = trial.suggest_float("training.learning_rate", 1e-6, 5e-5, log=True)
         epochs = trial.suggest_float("training.num_train_epochs", 0.5, 2)
         weight_decay = trial.suggest_float("training.weight_decay", 0.0, 0.3)
@@ -49,10 +52,13 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
             ]
             cfg: DictConfig = compose(config_name="config", overrides=overrides)
 
-        train_module = "training_model.one_file_train"
-        module = importlib.import_module(train_module)
-        # Предполагается, что функция train возвращает словарь {'eval_loss': float}
-        metrics: dict = module.main_train(data_dir, cfg)
+            # Execute training within the Hydra context
+            train_module = "training_model.one_file_train"
+            module = importlib.import_module(train_module)
+            # Call main_train while Hydra context is active
+            metrics: dict = module.main_train(data_dir, cfg)
+
+        # Access results after Hydra context
         loss = metrics.get("eval_loss")
         if loss is None:
             raise ValueError("train(cfg) did not return 'eval_loss' in metrics")

@@ -2,7 +2,7 @@
 import json
 import logging
 import os
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Dict, Any
 
 from datasets import Dataset
 from hydra.utils import get_original_cwd
@@ -12,16 +12,83 @@ from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTo
 from trl import GRPOConfig, GRPOTrainer
 
 
-def reward_function(prompts: List[str], completions: List[str], **kwargs) -> list:
-    """Compute rewards for GRPO training based on action matching.
+def validate_grpo_config(cfg: DictConfig) -> bool:
+    """Validate GRPO configuration parameters.
 
     Args:
-        prompts (list): List of prompts for trl consistency
-        completions (list): List of model-generated completions
-        kwargs (dict): Dataset row containing 'correct_actions'
+        cfg: Configuration object
 
     Returns:
-        list: List of reward values for each completion
+        bool: True if configuration is valid
+    """
+    required_grpo_params = ["val_data", "train_data", "num_generations"]
+    missing_params = []
+
+    for param in required_grpo_params:
+        if not hasattr(cfg.grpo, param):
+            missing_params.append(param)
+
+    if missing_params:
+        logging.error(f"Missing required GRPO parameters: {missing_params}")
+        return False
+
+    # Validate data files exist
+    data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
+    train_file = os.path.join(data_dir, cfg.grpo.train_data)
+    val_file = os.path.join(data_dir, cfg.grpo.val_data)
+
+    if not os.path.exists(train_file):
+        logging.error(f"GRPO training data file not found: {train_file}")
+        return False
+
+    if not os.path.exists(val_file):
+        logging.error(f"GRPO validation data file not found: {val_file}")
+        return False
+
+    logging.info("GRPO configuration validation passed")
+    return True
+
+
+def test_reward_function(
+    test_completions: List[str], correct_answer: str
+) -> Dict[str, Any]:
+    """Test the reward function with sample completions for debugging.
+
+    Args:
+        test_completions: List of test completions to evaluate
+        correct_answer: Expected correct answer
+
+    Returns:
+        Dictionary with test results and statistics
+    """
+    logging.info("Testing reward function...")
+
+    results = reward_function(test_completions, correct_answer=correct_answer)
+
+    stats = {
+        "total_completions": len(test_completions),
+        "positive_rewards": sum(1 for r in results if r > 0),
+        "zero_rewards": sum(1 for r in results if r == 0),
+        "negative_rewards": sum(1 for r in results if r < 0),
+        "average_reward": sum(results) / len(results) if results else 0,
+        "rewards": results,
+    }
+
+    logging.info(f"Reward function test results: {stats}")
+    return stats
+
+
+def reward_function(completions: List[str], **kwargs) -> List[float]:
+    """Compute rewards for GRPO training based on action matching.
+
+    This function follows TRL's expected signature for reward functions.
+
+    Args:
+        completions (List[str]): List of model-generated completions
+        **kwargs: Dataset row containing 'correct_answer'
+
+    Returns:
+        List[float]: List of reward values for each completion
     """
     correct_answer: Optional[str] = kwargs.get("correct_answer")
     logging.debug("Generated completions: %s", completions)
@@ -29,21 +96,63 @@ def reward_function(prompts: List[str], completions: List[str], **kwargs) -> lis
 
     rewards: List[float] = []
     if correct_answer is None:
-        # If somehow there's no "correct_answer" in this batch, penalize everything.
+        logging.warning(
+            "No 'correct_answer' found in batch kwargs, applying penalty to all completions"
+        )
         return [-1.0] * len(completions)
 
-    for completion in completions:
+    for i, completion in enumerate(completions):
         try:
-            # Each `completion` is supposed to be a JSON‐string, e.g.
+            # Strip whitespace and handle potential formatting issues
+            completion = completion.strip()
+            if not completion:
+                logging.debug(f"Completion {i} is empty, applying penalty")
+                rewards.append(-1.0)
+                continue
+
+            # Each `completion` is supposed to be a JSON string, e.g.
             #   '{"Content": {"Action": "Разговор"}}'
             parsed = json.loads(completion)
-            generated_action = parsed.get("Content", {}).get("Action", None)
+
+            # Validate expected structure
+            if not isinstance(parsed, dict):
+                logging.debug(f"Completion {i} is not a JSON object: {type(parsed)}")
+                rewards.append(-1.0)
+                continue
+
+            content = parsed.get("Content")
+            if not isinstance(content, dict):
+                logging.debug(f"Completion {i} missing or invalid 'Content' field")
+                rewards.append(-1.0)
+                continue
+
+            generated_action = content.get("Action")
+            if generated_action is None:
+                logging.debug(f"Completion {i} missing 'Action' field in Content")
+                rewards.append(-1.0)
+                continue
+
+            # Compare actions (case-sensitive exact match)
             if generated_action == correct_answer:
                 rewards.append(1.0)
+                logging.debug(
+                    f"Completion {i} matches correct answer: {generated_action}"
+                )
             else:
                 rewards.append(0.0)
-        except (json.JSONDecodeError, KeyError):
-            # If the model output wasn’t valid JSON → penalize
+                logging.debug(
+                    f"Completion {i} mismatch - generated: '{generated_action}', "
+                    f"expected: '{correct_answer}'"
+                )
+
+        except json.JSONDecodeError as e:
+            logging.debug(
+                f"Completion {i} JSON decode error: {e} - "
+                f"Content: '{completion[:100]}...'"
+            )
+            rewards.append(-1.0)
+        except Exception as e:
+            logging.warning(f"Unexpected error processing completion {i}: {e}")
             rewards.append(-1.0)
 
     return rewards
@@ -84,33 +193,77 @@ def prepare_grpo_data(
                …
             }
           }
-        into a HuggingFace Dataset with fields “prompt”
-        and “correct_actions” (or “correct_answer”).
+        into a HuggingFace Dataset with fields "prompt"
+        and "correct_answer" for GRPO training.
         """
         processed_data = []
         new_dataset = dict(dataset)
 
-        # Remove the top‐level "system" field; we only care about each example under "examples"
+        # Extract system instruction if available
+        system_instruction = new_dataset.get("system", "")
         new_dataset.pop("system", None)
 
-        for _, example in new_dataset["examples"].items():
+        for topic_key, example in new_dataset["examples"].items():
             prompt_dict = example["prompt"]
-            history = prompt_dict["History"][0]  # First system message
-            available_actions = prompt_dict["AvailableActions"]
-            user_input = prompt_dict["UserInput"]
-            prompt_str = (
-                f"{history}\n"
-                f"AvailableActions: {available_actions}\n"
-                f"User: {user_input}"
+            history = prompt_dict["History"][0] if prompt_dict.get("History") else ""
+            available_actions = prompt_dict.get("AvailableActions", [])
+            user_input = prompt_dict.get("UserInput", "")
+
+            # Enhanced prompt engineering for GRPO with JSON output instruction
+            prompt_parts = []
+
+            # Add system instruction
+            if system_instruction:
+                prompt_parts.append(f"System: {system_instruction}")
+
+            # Add context and history
+            if history:
+                prompt_parts.append(f"Context: {history}")
+
+            # Add available actions with clear formatting
+            if available_actions:
+                actions_str = ", ".join(f'"{action}"' for action in available_actions)
+                prompt_parts.append(f"Available Actions: [{actions_str}]")
+
+            # Add user input
+            if user_input:
+                prompt_parts.append(f"User: {user_input}")
+
+            # Add explicit JSON output instruction
+            prompt_parts.append(
+                "Assistant: You must respond with a valid JSON object in the following format: "
+                '{"Content": {"Action": "<your_chosen_action>"}}. '
+                "Choose the most appropriate action from the available actions."
             )
 
+            # Join all parts with double newlines for clarity
+            prompt_str = "\n\n".join(prompt_parts)
+
+            # Extract correct answer
             answer_dict = example["answer"]
-            correct_action = answer_dict["Content"]["Action"]
+            if isinstance(answer_dict, dict) and "Content" in answer_dict:
+                correct_action = answer_dict["Content"].get("Action")
+            else:
+                logging.warning(
+                    f"Invalid answer format in topic {topic_key}: {answer_dict}"
+                )
+                continue
+
+            if correct_action is None:
+                logging.warning(f"Missing Action in answer for topic {topic_key}")
+                continue
 
             processed_data.append(
-                {"prompt": prompt_str, "correct_answer": correct_action}
+                {
+                    "prompt": prompt_str,
+                    "correct_answer": correct_action,
+                    "topic": topic_key,  # Add topic for debugging
+                }
             )
 
+            logging.debug(f"Processed topic {topic_key}: action={correct_action}")
+
+        logging.info(f"Processed {len(processed_data)} examples from dataset")
         return Dataset.from_list(processed_data)
 
     train_data = process_dataset(train_dataset)
@@ -139,16 +292,52 @@ def grpo_train(
     Returns:
         int: Number of global training steps completed
     """
+    # Validate GRPO configuration
+    if not validate_grpo_config(cfg):
+        raise ValueError("GRPO configuration validation failed")
+
+    # Test reward function with sample data
+    sample_completions = [
+        '{"Content": {"Action": "Разговор"}}',  # Correct format
+        '{"Content": {"Action": "Игра"}}',  # Different action
+        '{"Invalid": "JSON"}',  # Wrong structure
+        "Not JSON at all",  # Invalid JSON
+        "",  # Empty completion
+    ]
+    test_reward_function(sample_completions, "Разговор")
+
     if data_preparing_func is None:
         train_data, val_data = prepare_grpo_data(cfg)
     else:
         train_data, val_data = data_preparing_func(
             cfg, tokenizer, should_add_prompt=True
         )
+
     logging.info("GRPO data prepared")
+    logging.info(f"Training dataset size: {len(train_data)}")
+    logging.info(f"Validation dataset size: {len(val_data)}")
+
+    # Log sample training data for debugging
+    if len(train_data) > 0:
+        sample = train_data[0]
+        logging.debug(f"Sample training data: {sample}")
+
     logging.debug(type(cfg.grpo.max_completion_length))
     if cfg.grpo.max_completion_length == "None":
         cfg.grpo.max_completion_length = tokenizer.model_max_length
+
+    # Set up generation config with GRPO parameters
+    generation_config = {
+        "do_sample": getattr(cfg.grpo, "do_sample", True),
+        "temperature": getattr(cfg.grpo, "temperature", 0.7),
+        "top_k": getattr(cfg.grpo, "top_k", 50),
+        "top_p": getattr(cfg.grpo, "top_p", 0.95),
+        "max_new_tokens": getattr(cfg.grpo, "response_length", 256),
+        "pad_token_id": tokenizer.pad_token_id,
+    }
+
+    logging.info(f"Generation config: {generation_config}")
+
     grpo_config = GRPOConfig(
         output_dir=cfg.model.new_model,
         per_device_train_batch_size=cfg.training.per_device_train_batch_size,
@@ -169,6 +358,15 @@ def grpo_train(
         save_total_limit=cfg.training.save_total_limit,
         load_best_model_at_end=cfg.training.load_best,
         num_generations=cfg.grpo.num_generations,
+        # GRPO-specific parameters
+        epsilon=getattr(cfg.grpo, "epsilon", 0.2),
+        beta=getattr(cfg.grpo, "beta", 0.01),
+        loss_type=getattr(cfg.grpo, "loss_type", "sigmoid"),
+    )
+
+    logging.info(
+        f"GRPO Config: epsilon={grpo_config.epsilon}, beta={grpo_config.beta}, "
+        f"loss_type={grpo_config.loss_type}, num_generations={grpo_config.num_generations}"
     )
 
     trainer = GRPOTrainer(
@@ -178,11 +376,25 @@ def grpo_train(
         eval_dataset=val_data,
         processing_class=tokenizer,
         reward_funcs=reward_func,
+        generation_config=generation_config,
     )
 
+    # Memory optimization before training
+    import torch
+    import gc
+
+    torch.cuda.empty_cache()
+    gc.collect()
+
+    logging.info("Starting GRPO training...")
     trainer.train()
     logging.info("GRPO training completed")
 
     global_steps = trainer.state.global_step
+
+    # Log final training statistics
+    if hasattr(trainer.state, "log_history") and trainer.state.log_history:
+        final_log = trainer.state.log_history[-1]
+        logging.info(f"Final training metrics: {final_log}")
 
     return global_steps
