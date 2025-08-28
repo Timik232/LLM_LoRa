@@ -3,7 +3,7 @@
 Hydra Configuration Reference
 =================================
 
-This document describes the Hydra configuration structure and parameters used for model training and management.
+This document describes the Hydra configuration structure and parameters used for model training and management in the LLM-LoRA framework. The configuration supports multiple training methods including SFT, DPO, GRPO, and various deployment formats.
 
 Configuration Overview
 ----------------------------
@@ -19,15 +19,38 @@ The configuration is organized into several sections controlling different aspec
 
     model:
       # Model architecture and training parameters
-      # ...
+      model_name: "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it"
+      lora_r: 16
+      lora_alpha: 32
+      torch_dtype: "float16"
+      qtype: "q4_1"
 
     training:
-      # Training hyperparameters
-      # ...
+      # Training hyperparameters and methods
+      training_method: "sft"  # Options: sft, dpo, grpo
+      per_device_train_batch_size: 1
+      gradient_accumulation_steps: 4
+      learning_rate: 2e-5
+      max_seq_length: 2048
+      gradient_checkpointing: true
 
     paths:
       # Directory paths and system locations
-      # ...
+      data_dir: "data"
+      output_dir: "models"
+      llama_cpp_dir: "../llama.cpp"
+      quantized_path: "build/bin/llama-quantize"
+
+    conversion:
+      # Model conversion and quantization options
+      convert_to_gguf: true
+      convert_to_rkllm: false
+      quantize_model: true
+
+    fire_cli:
+      # Fire CLI configuration
+      enable_cli: true
+      available_commands: ["train_model", "evaluate_model", "convert_to_gguf", "convert_to_rkllm"]
 
 Main Configuration Sections
 ---------------------------
@@ -84,6 +107,54 @@ Training Configuration
     * - Parameter
       - Description
       - Default
+    * - training_method
+      - Training approach (sft/dpo/grpo)
+      - "sft"
+    * - per_device_train_batch_size
+      - Batch size per GPU
+      - 1
+    * - gradient_accumulation_steps
+      - Number of update steps before backward pass
+      - 4
+    * - learning_rate
+      - Initial learning rate
+      - 2e-5
+    * - max_seq_length
+      - Maximum input sequence length
+      - 2048
+    * - gradient_checkpointing
+      - Enable memory-efficient training
+      - true
+
+Training Methods Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Method-Specific Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Usage
+    * - training_method: "sft"
+      - Supervised Fine-tuning with instruction-response pairs
+      - Standard fine-tuning
+    * - training_method: "dpo"
+      - Direct Preference Optimization for alignment
+      - Preference-based training
+    * - training_method: "grpo"
+      - Group Relative Policy Optimization
+      - Advanced preference learning
+    * - beta (DPO/GRPO)
+      - Temperature parameter for preference learning
+      - 0.1-0.5 typical range
+    * - preference_dataset
+      - Dataset path for preference training methods
+      - Required for DPO/GRPO
+
+    * - Parameter
+      - Description
+      - Default
     * - per_device_train_batch_size
       - Batch size per GPU
       - 1
@@ -119,9 +190,55 @@ Paths Configuration
     * - llama_cpp_dir
       - Path to llama.cpp installation
       - "../llama.cpp"
-    * - quantized_path
-      - llama.cpp quantizer executable path
-      - "build/bin/llama-quantize"
+    * - rkllm_toolkit_path
+      - Path to RKLLM conversion toolkit
+      - "path/to/rkllm-toolkit"
+
+Conversion Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Model Conversion Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - convert_to_gguf
+      - Enable GGUF format conversion
+      - true
+    * - convert_to_rkllm
+      - Enable RKLLM format conversion for Rockchip NPU
+      - false
+    * - quantize_model
+      - Apply post-training quantization
+      - true
+    * - gguf_quantization_type
+      - GGUF quantization method (q4_0, q4_1, q8_0)
+      - "q4_1"
+    * - rkllm_target_platform
+      - Target Rockchip platform (rk3588, rk3576)
+      - "rk3588"
+
+Fire CLI Configuration
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: CLI Interface Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - enable_cli
+      - Enable Fire CLI interface
+      - true
+    * - available_commands
+      - List of available CLI commands
+      - ["train_model", "evaluate_model", "convert_to_gguf"]
+    * - cli_help_enabled
+      - Enable automatic help generation
+      - true
 
 Training Pipeline Workflow
 --------------------------
@@ -140,27 +257,68 @@ The complete training process follows these stages:
 
 3. **Model Training**
     - Apply LoRA configuration to base model
-    - Train using either SFTTrainer or GRPO
+    - Train using selected method (SFT/DPO/GRPO)
     - Merge adapter weights with base model
 
 4. **Model Conversion**
-    - Convert merged model to GGUF format
+    - Convert merged model to GGUF format (optional)
+    - Convert to RKLLM format for Rockchip NPU (optional)
     - Quantize using llama.cpp tools
     - Save final weights to output directory
 
+5. **Evaluation**
+    - Run model evaluation using configured metrics
+    - Generate evaluation reports
+    - Compare with baseline models
+
 .. code-block:: python
 
-    # Simplified pipeline flow
+    # Simplified pipeline flow with new methods
     def train_pipeline(cfg):
-        steps = train(cfg)
+        if cfg.training.training_method == "sft":
+            steps = sft_train(cfg)
+        elif cfg.training.training_method == "dpo":
+            steps = dpo_train(cfg)
+        elif cfg.training.training_method == "grpo":
+            steps = grpo_train(cfg)
+
         with TemporaryDirectory() as tmp_dir:
             model_merge_for_converting(cfg, steps, tmp_dir)
-            convert_to_gguf(tmp_dir, ...)
-            quantize_model(...)
-            copy_final_weights(...)
 
+            if cfg.conversion.convert_to_gguf:
+                convert_to_gguf(tmp_dir, cfg)
+
+            if cfg.conversion.convert_to_rkllm:
+                convert_to_rkllm(tmp_dir, cfg)
+
+            if cfg.conversion.quantize_model:
+                quantize_model(cfg)
+
+            copy_final_weights(cfg)
 Important Implementation Notes
 ------------------------------
+
+Training Method Selection
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The framework supports three training approaches:
+
+.. list-table:: Training Method Comparison
+    :widths: 20 40 40
+    :header-rows: 1
+
+    * - Method
+      - Use Case
+      - Key Benefits
+    * - SFT
+      - Instruction following, task-specific adaptation
+      - Simple, stable, well-established
+    * - DPO
+      - Human preference alignment without RL
+      - Direct optimization, no reward model needed
+    * - GRPO
+      - Advanced preference learning
+      - Group-based optimization, improved alignment
 
 LoRA Configuration
 ~~~~~~~~~~~~~~~~~~
@@ -178,8 +336,30 @@ The model uses Low-Rank Adaptation with these key settings:
       - proj layers (q_proj, v_proj, etc)
       - r=16, alpha=32
     * - Modules to Save
-      - lm_head
+      - lm_head, embed_tokens
       - -
+
+Model Conversion Pipeline
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The framework supports multiple output formats:
+
+.. list-table:: Conversion Options
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Format
+      - Use Case
+      - Platform
+    * - PyTorch
+      - Development, fine-tuning
+      - GPU/CPU
+    * - GGUF
+      - CPU inference, llama.cpp
+      - CPU/GPU
+    * - RKLLM
+      - NPU acceleration
+      - Rockchip devices
 
 Quantization Setup
 ~~~~~~~~~~~~~~~~~~
