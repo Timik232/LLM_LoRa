@@ -29,7 +29,6 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.todo",
     "sphinx.ext.githubpages",
-    "myst_parser",
 ]
 
 # Autodoc configuration
@@ -68,12 +67,6 @@ intersphinx_mapping = {
 # Templates and exclusions
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
-
-# Source file suffixes
-source_suffix = {
-    ".rst": None,
-    ".md": "myst_parser",
-}
 
 # Master document
 master_doc = "index"
@@ -119,8 +112,8 @@ html_sidebars = {
 # HTML context
 html_context = {
     "display_github": True,
-    "github_user": "your-username",
-    "github_repo": "llm-lora",
+    "github_user": "timik232",
+    "github_repo": "LLM_LoRa",
     "github_version": "main",
     "conf_py_path": "/docs/",
 }
@@ -217,4 +210,4 @@ autosummary_generate = True
 autosummary_imported_members = False
 
 # viewcode configuration
-viewcode_import = True
+viewcode_import = None

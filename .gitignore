@@ -185,3 +185,7 @@ models/
 /data
 
 flash-attention
+
+.serena/
+
+.claude/
