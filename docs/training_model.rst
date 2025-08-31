@@ -61,26 +61,6 @@ Group Relative Policy Optimization training for advanced preference learning.
    :show-inheritance:
    :undoc-members:
 
-training\_model.utils module
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Utility functions for model loading, data processing, tokenization, and conversion operations.
-
-.. automodule:: training_model.utils
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-training\_model.vika\_utils module
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Specialized utilities for Vikhr model variants and custom model configurations.
-
-.. automodule:: training_model.vika_utils
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 training\_model.logging\_config module
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -97,6 +77,26 @@ training\_model.optuna module
 Hyperparameter optimization using Optuna for automated training parameter tuning.
 
 .. automodule:: training_model.optuna
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+training\_model.auth\_utils module
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Authentication and logging utility functions for external services.
+
+.. automodule:: training_model.auth_utils
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+training\_model.data\_preparation module
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Data preparation utilities for different dataset formats including classic and game formats.
+
+.. automodule:: training_model.data_preparation
    :members:
    :show-inheritance:
    :undoc-members:

@@ -11,7 +11,6 @@ from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 from hydra import compose, initialize
 from omegaconf import DictConfig
-from testing_model.models import CustomLocalModel, CustomMistralModel
 
 if TYPE_CHECKING:
     pass
@@ -36,15 +35,23 @@ def _load_environment_if_needed() -> None:
             pass
 
 
-_load_environment_if_needed()
+# Load environment only when needed, not at module level
+def _get_mistral_model():
+    """Get Mistral model with lazy initialization."""
+    _load_environment_if_needed()
+    from testing_model.models import CustomMistralModel
+
+    mistral_api = os.getenv("MISTRAL_API")
+    return CustomMistralModel(
+        api_key=mistral_api, model="mistral-small-latest", temperature=0.7
+    )
 
 
-MISTRAL_API = os.getenv("MISTRAL_API")
-mistral_model = CustomMistralModel(
-    api_key=MISTRAL_API, model="mistral-small-latest", temperature=0.7
-)
+def _get_local_model():
+    """Get local model with lazy initialization."""
+    from testing_model.models import CustomLocalModel
 
-local_model = CustomLocalModel()
+    return CustomLocalModel()
 
 
 def set_local_model_via_cli(
@@ -119,7 +126,7 @@ def test_mention_number_of_values(user_input: str, output: str) -> bool:
         #     # "Confirm that the Actual Output does not directly answer
         #     the question from the VIKA, even if user want it."
         # ],
-        model=mistral_model,
+        model=_get_mistral_model(),
         verbose_mode=True,
         threshold=0.7,
         evaluation_params=[

@@ -11,6 +11,8 @@ from peft import PeftModel
 from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
 from trl import DPOConfig, DPOTrainer
 
+from .logging_utils import get_report_to_backend
+
 
 def validate_dpo_config(cfg: DictConfig) -> bool:
     """Validate DPO configuration parameters.
@@ -173,6 +175,9 @@ def dpo_train(
         sample = train_data[0]
         logging.debug(f"Sample DPO training data: {sample}")
 
+    # Get the appropriate report_to backend based on configuration
+    report_to_backend = get_report_to_backend(cfg)
+
     # Set up DPO configuration
     dpo_config = DPOConfig(
         output_dir=cfg.model.new_model,
@@ -191,7 +196,7 @@ def dpo_train(
         weight_decay=cfg.training.weight_decay,
         gradient_checkpointing=cfg.training.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        report_to="wandb",
+        report_to=report_to_backend,  # Use dynamic backend selection
         save_total_limit=cfg.training.save_total_limit,
         load_best_model_at_end=cfg.training.load_best,
         # DPO-specific parameters

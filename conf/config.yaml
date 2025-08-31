@@ -12,6 +12,7 @@ model:
   train_steps: 60
   outfile: "custom-model.gguf" # if you change this, change the model in run_pipeline
   quant:
+    enabled: true # Enable GGUF conversion in training pipeline
     qtype: "q4_1"
     gguf_dir: "${paths.gguf_directory}" # if you change this, change in run_pipeline
     use_8bit: false

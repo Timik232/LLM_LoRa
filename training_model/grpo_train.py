@@ -11,6 +11,8 @@ from peft import PeftModel
 from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
 from trl import GRPOConfig, GRPOTrainer
 
+from .logging_utils import get_report_to_backend
+
 
 def validate_grpo_config(cfg: DictConfig) -> bool:
     """Validate GRPO configuration parameters.
@@ -341,6 +343,9 @@ def grpo_train(
 
     logging.info(f"Generation config: {generation_config}")
 
+    # Get the appropriate report_to backend based on configuration
+    report_to_backend = get_report_to_backend(cfg)
+
     grpo_config = GRPOConfig(
         output_dir=cfg.model.new_model,
         per_device_train_batch_size=cfg.training.per_device_train_batch_size,
@@ -357,7 +362,7 @@ def grpo_train(
         weight_decay=cfg.training.weight_decay,
         gradient_checkpointing=cfg.training.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        report_to="wandb",
+        report_to=report_to_backend,  # Use dynamic backend selection
         save_total_limit=cfg.training.save_total_limit,
         load_best_model_at_end=cfg.training.load_best,
         num_generations=cfg.grpo.num_generations,

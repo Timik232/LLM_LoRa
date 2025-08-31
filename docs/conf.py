@@ -29,6 +29,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.todo",
     "sphinx.ext.githubpages",
+    "myst_parser",
 ]
 
 # Autodoc configuration

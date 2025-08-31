@@ -362,25 +362,6 @@ Model Types
 Constants and Enums
 -------------------
 
-Training Constants
-~~~~~~~~~~~~~~~~~~
-
-.. automodule:: training_model.constants
-   :members:
-   :undoc-members:
-
-.. data:: training_model.constants.SUPPORTED_MODELS
-
-   List of supported base model architectures.
-
-.. data:: training_model.constants.DEFAULT_LORA_CONFIG
-
-   Default LoRA configuration parameters.
-
-.. data:: training_model.constants.QUANTIZATION_TYPES
-
-   Supported quantization types for GGUF conversion.
-
 Training Methods Enum
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -433,39 +414,6 @@ Configuration Exceptions
 
 Helper Functions
 ----------------
-
-File System Utilities
-~~~~~~~~~~~~~~~~~~~~~
-
-.. automodule:: training_model.file_utils
-   :members:
-   :undoc-members:
-
-.. autofunction:: training_model.file_utils.ensure_directory
-.. autofunction:: training_model.file_utils.copy_model_files
-.. autofunction:: training_model.file_utils.cleanup_temp_files
-
-GPU Utilities
-~~~~~~~~~~~~~
-
-.. automodule:: training_model.gpu_utils
-   :members:
-   :undoc-members:
-
-.. autofunction:: training_model.gpu_utils.get_gpu_info
-.. autofunction:: training_model.gpu_utils.clear_gpu_cache
-.. autofunction:: training_model.gpu_utils.optimize_gpu_memory
-
-Memory Management
-~~~~~~~~~~~~~~~~~
-
-.. automodule:: training_model.memory_utils
-   :members:
-   :undoc-members:
-
-.. autofunction:: training_model.memory_utils.monitor_memory_usage
-.. autofunction:: training_model.memory_utils.optimize_batch_size
-.. autofunction:: training_model.memory_utils.clear_memory_cache
 
 Version Information
 -------------------
@@ -521,7 +469,7 @@ DPO Training Example
 .. code-block:: python
 
     from training_model.dpo_train import dpo_train
-    from training_model.utils import load_preference_dataset
+    from training_model.data_preparation import load_preference_dataset
 
     # Load preference data
     dataset = load_preference_dataset("data/preferences.json")
@@ -561,7 +509,7 @@ Model Conversion Example
 
 .. code-block:: python
 
-    from training_model.utils import convert_to_gguf, convert_to_rkllm
+    from training_model.one_file_train import convert_to_gguf, convert_to_rkllm
 
     # Convert to GGUF
     gguf_path = convert_to_gguf(

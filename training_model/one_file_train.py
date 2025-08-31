@@ -35,6 +35,13 @@ from .grpo_train import grpo_train
 from .dpo_train import dpo_train
 from .logging_config import configure_logging
 from .data_preparation import dataset_to_json
+from .logging_utils import (
+    get_report_to_backend,
+    log_training_config,
+    log_training_artifacts,
+    log_evaluation_metrics,
+    validate_mlflow_connection,
+)
 
 _LOGGING_BACKEND: Optional[str] = None
 
@@ -472,6 +479,10 @@ def run_sft_training(
     )
 
     logging.info("Starting SFT training phase...")
+
+    # Get the appropriate report_to backend based on configuration
+    report_to_backend = get_report_to_backend(cfg)
+
     sft_config = SFTConfig(
         output_dir=cfg.model.new_model,
         max_length=cfg.training.max_seq_length,
@@ -496,7 +507,7 @@ def run_sft_training(
         neftune_noise_alpha=cfg.training.neftune_noise_alpha,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         group_by_length=True,
-        report_to="none",
+        report_to=report_to_backend,  # Use dynamic backend selection
         save_total_limit=cfg.training.save_total_limit,
         load_best_model_at_end=cfg.training.load_best,
     )
@@ -1011,6 +1022,16 @@ def train_pipeline(cfg: DictConfig) -> Dict[str, Any]:
     """
     # initialize optional experiment logging backend (wandb / mlflow / none)
     init_logging_backend(cfg)
+
+    # Validate MLflow connection if MLflow backend is selected
+    if not validate_mlflow_connection(cfg):
+        logging.warning(
+            "MLflow connection validation failed, but continuing with training"
+        )
+
+    # Log training configuration to MLflow if enabled
+    log_training_config(cfg)
+
     try:
         result = train(cfg)
         merge_adapter_from_checkpoint(
@@ -1027,35 +1048,47 @@ def train_pipeline(cfg: DictConfig) -> Dict[str, Any]:
         with TemporaryDirectory() as merged_model_dir:
             model_merge_for_converting(cfg, steps, merged_model_dir)
 
-            outfile = cfg.model.outfile
+            # GGUF conversion (optional based on config)
+            if cfg.model.quant.get(
+                "enabled", True
+            ):  # Default to True for backward compatibility
+                outfile = cfg.model.outfile
 
-            convert_to_gguf(
-                model_path=merged_model_dir,
-                outfile=os.path.join(merged_model_dir, outfile),
-                python_exe=cfg.paths.venv_python_path,
-                outtype="f16",
-                cfg=cfg,
-            )
-            logging.info(f"Converted to GGUF: {outfile}")
-
-            quantized_file = outfile
-            if quantize_model(
-                model_path=os.path.join(merged_model_dir, outfile),
-                outfile=quantized_file,
-                qtype=cfg.model.quant.qtype,
-                llama_cpp_path=os.path.abspath(cfg.paths.llama_cpp_dir),
-                quantized_path=cfg.paths.quantized_path,
-            ):
-                copy_data(
-                    quantized_file,
-                    cfg.model.quant.gguf_dir,
-                    cfg.paths.final_weights_path,
+                convert_to_gguf(
+                    model_path=merged_model_dir,
+                    outfile=os.path.join(merged_model_dir, outfile),
+                    python_exe=cfg.paths.venv_python_path,
+                    outtype="f16",
+                    cfg=cfg,
                 )
-                if os.path.exists(quantized_file):
-                    os.remove(quantized_file)
-                    logging.info(f"Removed intermediate file: {quantized_file}")
+                logging.info(f"Converted to GGUF: {outfile}")
+
+                quantized_file = outfile
+                if quantize_model(
+                    model_path=os.path.join(merged_model_dir, outfile),
+                    outfile=quantized_file,
+                    qtype=cfg.model.quant.qtype,
+                    llama_cpp_path=os.path.abspath(cfg.paths.llama_cpp_dir),
+                    quantized_path=cfg.paths.quantized_path,
+                ):
+                    copy_data(
+                        quantized_file,
+                        cfg.model.quant.gguf_dir,
+                        cfg.paths.final_weights_path,
+                    )
+                    if os.path.exists(quantized_file):
+                        os.remove(quantized_file)
+                        logging.info(f"Removed intermediate file: {quantized_file}")
+                else:
+                    raise RuntimeError("Quantization failed")
             else:
-                raise RuntimeError("Quantization failed")
+                # Alternative flow: copy merged HuggingFace model directly to output
+                logging.info("GGUF conversion disabled, copying merged model directly")
+                merged_output_dir = os.path.join(cfg.paths.output_dir, "merged_model")
+                if os.path.exists(merged_output_dir):
+                    shutil.rmtree(merged_output_dir)
+                shutil.copytree(merged_model_dir, merged_output_dir)
+                logging.info(f"Merged model copied to: {merged_output_dir}")
 
             # RKLLM conversion (if enabled)
             if getattr(cfg.model, "rkllm", {}).get("enabled", False):
@@ -1086,6 +1119,12 @@ def train_pipeline(cfg: DictConfig) -> Dict[str, Any]:
                     logging.info("Continuing without RKLLM conversion...")
             else:
                 logging.info("RKLLM conversion disabled in configuration")
+
+        # Log training artifacts to MLflow if enabled
+        log_training_artifacts(cfg, cfg.paths.output_dir, steps)
+
+        # Log evaluation metrics to MLflow if enabled
+        log_evaluation_metrics({"eval_loss": eval_loss, "global_steps": steps})
 
         logging.info("Training pipeline completed")
         return {"eval_loss": eval_loss}

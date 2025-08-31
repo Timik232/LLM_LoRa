@@ -19,20 +19,52 @@ The configuration is organized into several sections controlling different aspec
 
     model:
       # Model architecture and training parameters
-      model_name: "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it"
-      lora_r: 16
-      lora_alpha: 32
-      torch_dtype: "float16"
-      qtype: "q4_1"
+      model_name: "RefalMachine/RuadaptQwen3-4B-Instruct"
+      new_model: "4b-chat-vika"
+      torch_dtype: "bfloat16"
+      attn_implementation: "eager"
+      train_steps: 60
+      outfile: "custom-model.gguf"
+
+      # Quantization and GGUF conversion settings
+      quant:
+        enabled: true  # Enable GGUF conversion in training pipeline (NEW)
+        qtype: "q4_1"
+        gguf_dir: "${paths.gguf_directory}"
+        use_8bit: false
+
+      # RKLLM conversion for Rockchip NPU
+      rkllm:
+        enabled: true
+        target_platform: "rk3588"
+        quantization: "w8a8"
+        output_dir: "rkllm_models"
+        do_parallelize: false
+        hybrid_quantization: false
+        num_npu_core: 1
+
+      # LoRA configuration
+      lora:
+        r: 16
+        alpha: 32
+        dropout: 0.1
+
+      model_type: "auto"  # gemma, gemma3n, or auto
 
     training:
-      # Training hyperparameters and methods
-      training_method: "sft"  # Options: sft, dpo, grpo
+      # Training hyperparameters and method selection
+      use_sft: true      # Enable Supervised Fine-Tuning
+      use_grpo: false    # Enable Group Relative Policy Optimization
+      use_dpo: false     # Enable Direct Preference Optimization
+
       per_device_train_batch_size: 1
-      gradient_accumulation_steps: 4
+      gradient_accumulation_steps: 6
+      num_train_epochs: 1.1
       learning_rate: 2e-5
       max_seq_length: 2048
       gradient_checkpointing: true
+      fp16: true
+      bf16: false
 
     data_preparation:
       # Data preparation method selection
@@ -44,19 +76,22 @@ The configuration is organized into several sections controlling different aspec
       # Directory paths and system locations
       data_dir: "data"
       output_dir: "models"
-      llama_cpp_dir: "../llama.cpp"
-      quantized_path: "build/bin/llama-quantize"
+      train_data: "dog_dataset.json"
+      llama_cpp_dir: "llama.cpp"
+      venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+      quantized_path: "llama-quantize.exe"
+      gguf_directory: "custom-model"
+      final_weights_path: "models"
 
-    conversion:
-      # Model conversion and quantization options
-      convert_to_gguf: true
-      convert_to_rkllm: false
-      quantize_model: true
-
-    fire_cli:
-      # Fire CLI configuration
-      enable_cli: true
-      available_commands: ["train_model", "evaluate_model", "convert_to_gguf", "convert_to_rkllm"]
+    logging:
+      # Experiment tracking configuration
+      logging_backend: "mlflow"  # Options: wandb, mlflow, none
+      wandb:
+        project_name: "Gemma vika train"
+        anonymous: "allow"
+      mlflow:
+        experiment_name: "vika-experiment"
+        tracking_uri: "http://mlflow:5000"
 
 Main Configuration Sections
 ---------------------------
@@ -89,19 +124,107 @@ Model Configuration
       - Default
     * - model_name
       - Base model identifier from Hugging Face Hub
-      - "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it"
-    * - lora_r
+      - "RefalMachine/RuadaptQwen3-4B-Instruct"
+    * - new_model
+      - Output name for the fine-tuned model
+      - "4b-chat-vika"
+    * - torch_dtype
+      - Model precision (float16/bfloat16/float32)
+      - "bfloat16"
+    * - attn_implementation
+      - Attention implementation (eager/flash_attention_2)
+      - "eager"
+    * - train_steps
+      - Number of training steps
+      - 60
+    * - outfile
+      - Output filename for GGUF conversion
+      - "custom-model.gguf"
+    * - model_type
+      - Model architecture type (auto/gemma/gemma3n)
+      - "auto"
+
+Model Quantization Configuration (model.quant)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Quantization Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - enabled
+      - **NEW**: Enable GGUF conversion in training pipeline
+      - true
+    * - qtype
+      - Quantization type for GGUF conversion (q4_0, q4_1, q8_0)
+      - "q4_1"
+    * - gguf_dir
+      - Output directory for GGUF files
+      - "${paths.gguf_directory}"
+    * - use_8bit
+      - Use 8-bit quantization instead of 4-bit
+      - false
+
+The ``enabled`` parameter allows you to disable GGUF conversion for Docker deployments or when only the HuggingFace model format is needed:
+
+.. code-block:: bash
+
+    # Disable GGUF conversion
+    python main.py model.quant.enabled=false
+
+RKLLM Configuration (model.rkllm)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: RKLLM Conversion Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - enabled
+      - Enable RKLLM conversion for Rockchip NPU
+      - true
+    * - target_platform
+      - Target Rockchip platform (rk3588, rk3576, etc.)
+      - "rk3588"
+    * - quantization
+      - RKLLM quantization type (w8a8, w4a16, w4a16_g128)
+      - "w8a8"
+    * - output_dir
+      - Output directory for RKLLM models
+      - "rkllm_models"
+    * - do_parallelize
+      - Enable model parallelization for larger models
+      - false
+    * - hybrid_quantization
+      - Enable hybrid quantization
+      - false
+    * - num_npu_core
+      - Number of NPU cores to use (1-3)
+      - 1
+
+LoRA Configuration (model.lora)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: LoRA Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - r
       - LoRA rank dimension
       - 16
-    * - lora_alpha
+    * - alpha
       - LoRA alpha scaling factor
       - 32
-    * - qtype
-      - Quantization type for GGUF conversion
-      - "q4_1"
-    * - torch_dtype
-      - Base model dtype (float16/float32)
-      - "float16"
+    * - dropout
+      - LoRA dropout rate
+      - 0.1
 
 Data Preparation Configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -133,15 +256,24 @@ Training Configuration
     * - Parameter
       - Description
       - Default
-    * - training_method
-      - Training approach (sft/dpo/grpo)
-      - "sft"
+    * - use_sft
+      - Enable Supervised Fine-Tuning
+      - true
+    * - use_grpo
+      - Enable Group Relative Policy Optimization
+      - false
+    * - use_dpo
+      - Enable Direct Preference Optimization
+      - false
     * - per_device_train_batch_size
       - Batch size per GPU
       - 1
     * - gradient_accumulation_steps
       - Number of update steps before backward pass
-      - 4
+      - 6
+    * - num_train_epochs
+      - Number of training epochs
+      - 1.1
     * - learning_rate
       - Initial learning rate
       - 2e-5
@@ -151,51 +283,36 @@ Training Configuration
     * - gradient_checkpointing
       - Enable memory-efficient training
       - true
+    * - fp16
+      - Use 16-bit floating point precision
+      - true
+    * - bf16
+      - Use bfloat16 precision
+      - false
 
-Training Methods Configuration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Training Methods Selection
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. list-table:: Method-Specific Parameters
+The framework supports three training methods that can be enabled independently:
+
+.. list-table:: Training Method Flags
     :widths: 25 50 25
     :header-rows: 1
 
     * - Parameter
       - Description
       - Usage
-    * - training_method: "sft"
+    * - use_sft: true
       - Supervised Fine-tuning with instruction-response pairs
-      - Standard fine-tuning
-    * - training_method: "dpo"
-      - Direct Preference Optimization for alignment
-      - Preference-based training
-    * - training_method: "grpo"
+      - Standard fine-tuning approach
+    * - use_grpo: true
       - Group Relative Policy Optimization
-      - Advanced preference learning
-    * - beta (DPO/GRPO)
-      - Temperature parameter for preference learning
-      - 0.1-0.5 typical range
-    * - preference_dataset
-      - Dataset path for preference training methods
-      - Required for DPO/GRPO
+      - Advanced preference learning (requires preference data)
+    * - use_dpo: true
+      - Direct Preference Optimization for alignment
+      - Preference-based training (requires preference data)
 
-    * - Parameter
-      - Description
-      - Default
-    * - per_device_train_batch_size
-      - Batch size per GPU
-      - 1
-    * - gradient_accumulation_steps
-      - Number of update steps before backward pass
-      - 4
-    * - learning_rate
-      - Initial learning rate
-      - 2e-5
-    * - max_seq_length
-      - Maximum input sequence length
-      - 2048
-    * - gradient_checkpointing
-      - Enable memory-efficient training
-      - true
+Multiple training methods can be chained together in a single pipeline run.
 
 Paths Configuration
 ~~~~~~~~~~~~~~~~~~~
@@ -220,31 +337,50 @@ Paths Configuration
       - Path to RKLLM conversion toolkit
       - "path/to/rkllm-toolkit"
 
-Conversion Configuration
-~~~~~~~~~~~~~~~~~~~~~~~~
+Model Conversion and Output Formats
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. list-table:: Model Conversion Parameters
+The framework supports multiple model output formats controlled by configuration flags:
+
+.. list-table:: Conversion Control Parameters
     :widths: 25 50 25
     :header-rows: 1
 
-    * - Parameter
+    * - Parameter Path
       - Description
       - Default
-    * - convert_to_gguf
-      - Enable GGUF format conversion
+    * - model.quant.enabled
+      - Enable GGUF format conversion and quantization
       - true
-    * - convert_to_rkllm
+    * - model.rkllm.enabled
       - Enable RKLLM format conversion for Rockchip NPU
-      - false
-    * - quantize_model
-      - Apply post-training quantization
       - true
-    * - gguf_quantization_type
-      - GGUF quantization method (q4_0, q4_1, q8_0)
-      - "q4_1"
-    * - rkllm_target_platform
-      - Target Rockchip platform (rk3588, rk3576)
-      - "rk3588"
+
+**GGUF Conversion Control:**
+
+When ``model.quant.enabled=true`` (default):
+- Model is converted to GGUF format using llama.cpp
+- Quantization is applied according to ``model.quant.qtype``
+- Output is saved to ``model.quant.gguf_dir``
+
+When ``model.quant.enabled=false``:
+- GGUF conversion is skipped
+- Only the merged HuggingFace model is saved
+- Useful for Docker deployments or when GGUF is not needed
+
+**RKLLM Conversion Control:**
+
+When ``model.rkllm.enabled=true``:
+- Additional RKLLM format is generated for Rockchip NPU
+- Uses ``model.rkllm.target_platform`` and ``model.rkllm.quantization``
+- Output is saved to ``model.rkllm.output_dir``
+
+.. code-block:: bash
+
+    # Examples of conversion control
+    python main.py model.quant.enabled=false  # Skip GGUF conversion
+    python main.py model.rkllm.enabled=false  # Skip RKLLM conversion
+    python main.py model.quant.enabled=false model.rkllm.enabled=false  # Only HF model
 
 Fire CLI Configuration
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -272,7 +408,7 @@ Training Pipeline Workflow
 The complete training process follows these stages:
 
 1. **Initialization**
-    - Configure logging and environment
+    - Configure logging backend (wandb/mlflow/none)
     - Load base model with 4-bit quantization
     - Prepare tokenizer with custom padding
 
@@ -284,44 +420,62 @@ The complete training process follows these stages:
 
 3. **Model Training**
     - Apply LoRA configuration to base model
-    - Train using selected method (SFT/DPO/GRPO)
+    - Train using enabled methods (SFT/DPO/GRPO can be chained)
     - Merge adapter weights with base model
 
-4. **Model Conversion**
-    - Convert merged model to GGUF format (optional)
-    - Convert to RKLLM format for Rockchip NPU (optional)
-    - Quantize using llama.cpp tools
-    - Save final weights to output directory
+4. **Model Conversion (Conditional)**
+    - **HuggingFace Model**: Always saved to output directory
+    - **GGUF Conversion**: Only if ``model.quant.enabled=true`` (default)
+    - **RKLLM Conversion**: Only if ``model.rkllm.enabled=true``
+    - **Quantization**: Applied during GGUF conversion using llama.cpp
 
-5. **Evaluation**
+5. **Evaluation** (Optional)
     - Run model evaluation using configured metrics
     - Generate evaluation reports
     - Compare with baseline models
 
 .. code-block:: python
 
-    # Simplified pipeline flow with new methods
+    # Updated pipeline flow with conditional conversion
     def train_pipeline(cfg):
-        if cfg.training.training_method == "sft":
+        # Training phase (multiple methods can be chained)
+        if cfg.training.use_sft:
             steps = sft_train(cfg)
-        elif cfg.training.training_method == "dpo":
-            steps = dpo_train(cfg)
-        elif cfg.training.training_method == "grpo":
+
+        if cfg.training.use_grpo:
             steps = grpo_train(cfg)
 
+        if cfg.training.use_dpo:
+            steps = dpo_train(cfg)
+
         with TemporaryDirectory() as tmp_dir:
+            # Always merge model
             model_merge_for_converting(cfg, steps, tmp_dir)
 
-            if cfg.conversion.convert_to_gguf:
+            # Conditional GGUF conversion (NEW LOGIC)
+            if cfg.model.quant.get("enabled", True):
                 convert_to_gguf(tmp_dir, cfg)
+                quantize_model(cfg)
+                copy_data(quantized_file, cfg.model.quant.gguf_dir)
+            else:
+                # Alternative: copy merged HF model directly
+                merged_output_dir = os.path.join(cfg.paths.output_dir, "merged_model")
+                shutil.copytree(tmp_dir, merged_output_dir)
 
-            if cfg.conversion.convert_to_rkllm:
+            # Conditional RKLLM conversion (always optional)
+            if cfg.model.rkllm.get("enabled", False):
                 convert_to_rkllm(tmp_dir, cfg)
 
-            if cfg.conversion.quantize_model:
-                quantize_model(cfg)
+**Docker Deployment Example:**
 
-            copy_final_weights(cfg)
+For containerized deployments where GGUF is not needed:
+
+.. code-block:: bash
+
+    # Run training without GGUF conversion
+    docker-compose exec llm_training python main.py model.quant.enabled=false
+
+This saves significant time and disk space in Docker environments where only the HuggingFace model format is required.
 Important Implementation Notes
 ------------------------------
 
