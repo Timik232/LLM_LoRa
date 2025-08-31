@@ -83,54 +83,36 @@ Key Functions
 Utility Modules
 ---------------
 
-training_model.utils
-~~~~~~~~~~~~~~~~~~~~~
+training_model.auth_utils
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Core utility functions for model operations and data processing.
+Authentication and logging utility functions.
 
-.. automodule:: training_model.utils
+.. automodule:: training_model.auth_utils
    :members:
    :undoc-members:
    :show-inheritance:
 
-Model Operations
-^^^^^^^^^^^^^^^^
+Authentication Functions
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autofunction:: training_model.utils.load_model_with_quantization
-.. autofunction:: training_model.utils.setup_lora_config
-.. autofunction:: training_model.utils.merge_lora_weights
-.. autofunction:: training_model.utils.save_model_safely
+.. autofunction:: training_model.auth_utils.tokens_init
 
-Data Processing
-^^^^^^^^^^^^^^^
+training_model.data_preparation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: training_model.utils.prepare_chat_dataset
-.. autofunction:: training_model.utils.tokenize_dataset
-.. autofunction:: training_model.utils.format_chat_prompt
+Data preparation utilities for different dataset formats.
 
-Model Conversion
-^^^^^^^^^^^^^^^^
-
-.. autofunction:: training_model.utils.convert_to_gguf
-.. autofunction:: training_model.utils.convert_to_rkllm
-.. autofunction:: training_model.utils.quantize_model
-
-training_model.vika_utils
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Specialized utilities for Vikhr model variants.
-
-.. automodule:: training_model.vika_utils
+.. automodule:: training_model.data_preparation
    :members:
    :undoc-members:
    :show-inheritance:
 
-Key Functions
-^^^^^^^^^^^^^
+Data Processing Functions
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autofunction:: training_model.vika_utils.load_vika_model
-.. autofunction:: training_model.vika_utils.setup_vika_tokenizer
-.. autofunction:: training_model.vika_utils.vika_chat_format
+.. autofunction:: training_model.data_preparation.dataset_to_json
+.. autofunction:: training_model.data_preparation.get_user_prompt
 
 Configuration and Logging
 --------------------------
@@ -218,27 +200,33 @@ DeepEval framework integration for advanced evaluation.
    :undoc-members:
    :show-inheritance:
 
-Key Classes
-^^^^^^^^^^^
-
-.. autoclass:: evaluation.deepeval_integration.DeepEvalMetrics
-   :members:
-   :undoc-members:
-
-.. autoclass:: evaluation.deepeval_integration.FaithfulnessMetric
-   :members:
-   :undoc-members:
-
-.. autoclass:: evaluation.deepeval_integration.BiasMetric
-   :members:
-   :undoc-members:
-
 Key Functions
 ^^^^^^^^^^^^^
 
-.. autofunction:: evaluation.deepeval_integration.run_deepeval
-.. autofunction:: evaluation.deepeval_integration.setup_deepeval_metrics
-.. autofunction:: evaluation.deepeval_integration.generate_evaluation_report
+.. autofunction:: evaluation.deepeval_integration.test_mention_number_of_values
+.. autofunction:: evaluation.deepeval_integration.test_from_dataset
+.. autofunction:: evaluation.deepeval_integration.set_local_model_via_cli
+
+testing_model.models
+~~~~~~~~~~~~~~~~~~~~~
+
+Custom model implementations for testing and evaluation.
+
+.. automodule:: testing_model.models
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Key Classes
+^^^^^^^^^^^
+
+.. autoclass:: testing_model.models.CustomLocalModel
+   :members:
+   :undoc-members:
+
+.. autoclass:: testing_model.models.CustomMistralModel
+   :members:
+   :undoc-members:
 
 evaluation.game_evaluation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

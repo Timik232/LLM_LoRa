@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "=== Starting Training Phase ==="
-python -m training_model
+poetry run python main.py pipeline --skip_test=true
 
 echo "=== Preparing Model for Ollama ==="
 GGUF_DIR="models/custom-model"
@@ -69,4 +69,4 @@ else
 fi
 
 echo "=== Running Integration Tests ==="
-python -m testing_model
+poetry run python -m testing_model

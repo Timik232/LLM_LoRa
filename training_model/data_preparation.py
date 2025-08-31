@@ -22,7 +22,9 @@ def get_user_prompt(data: str) -> str:
     return prompt
 
 
-def dataset_to_json(dataset: Dict[str, Any], filename: str) -> List[Dict[str, str]]:
+def dataset_to_json(
+    dataset: Dict[str, Any], filename: str, method: str = "classic"
+) -> List[Dict[str, str]]:
     """
     Convert dataset to JSON lines format and save to a file.
 
@@ -31,6 +33,7 @@ def dataset_to_json(dataset: Dict[str, Any], filename: str) -> List[Dict[str, st
             - 'system': System prompt template
             - 'examples': Dictionary of conversation examples
         filename (str): Output file path where JSON lines are written.
+        method (str): Data preparation method - "classic" or "game". Defaults to "classic".
 
     Returns:
         List[Dict[str, str]]: List of JSON objects representing each example.
@@ -39,14 +42,28 @@ def dataset_to_json(dataset: Dict[str, Any], filename: str) -> List[Dict[str, st
     system_template = dataset.get("system", "")
     examples = dataset.get("examples", {})
 
+    # Import the game get_user_prompt if needed
+    if method == "game":
+        from evaluation.model_evaluation import get_user_prompt as game_get_user_prompt
+    else:
+        game_get_user_prompt = None
+
     # Initialize (or clear) the output file
     with open(filename, "w", encoding="utf-8"):
         pass
 
     for example in examples:
         system_message = system_template
-        user_message = get_user_prompt(example.get("instruction", {}))
-        bot_message = str(example.get("output", ""))
+
+        # Use different data preparation methods based on configuration
+        if method == "game":
+            # Game method: expects "prompt" field with complex structure
+            user_message = game_get_user_prompt(example.get("prompt", {}))
+            bot_message = str(example.get("answer", ""))
+        else:
+            # Classic method: simple instruction/output format
+            user_message = get_user_prompt(example.get("instruction", {}))
+            bot_message = str(example.get("output", ""))
 
         json_object = {
             "system": system_message,

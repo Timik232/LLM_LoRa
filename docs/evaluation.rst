@@ -106,7 +106,7 @@ Basic Model Evaluation
 .. code-block:: python
 
     from evaluation.model_evaluation import evaluate_model
-    from evaluation.deepeval_integration import DeepEvalMetrics
+    from testing_model.models import CustomLocalModel, CustomMistralModel
 
     # Load and evaluate model
     results = evaluate_model(
@@ -114,6 +114,10 @@ Basic Model Evaluation
         test_dataset="data/test_set.json",
         metrics=["bleu", "rouge", "perplexity"]
     )
+
+    # Use custom models for evaluation
+    local_model = CustomLocalModel(model="custom-model", url="http://localhost:1234/v1/")
+    mistral_model = CustomMistralModel(api_key="your-api-key")
 
 DeepEval Integration
 ~~~~~~~~~~~~~~~~~~~~

@@ -34,6 +34,12 @@ The configuration is organized into several sections controlling different aspec
       max_seq_length: 2048
       gradient_checkpointing: true
 
+    data_preparation:
+      # Data preparation method selection
+      method: "classic"  # Options: "classic" | "game"
+      # classic: Simple instruction/output format with basic prompting
+      # game: Complex game format with history, actions, and system messages
+
     paths:
       # Directory paths and system locations
       data_dir: "data"
@@ -96,6 +102,26 @@ Model Configuration
     * - torch_dtype
       - Base model dtype (float16/float32)
       - "float16"
+
+Data Preparation Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Data Preparation Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - method
+      - Data preparation method selection
+      - "classic"
+    * - method: "classic"
+      - Simple instruction/output format for standard fine-tuning
+      - Expects "instruction" and "output" fields
+    * - method: "game"
+      - Complex game format with conversation history and actions
+      - Expects "prompt" and "answer" fields with structured data
 
 Training Configuration
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -252,7 +278,8 @@ The complete training process follows these stages:
 
 2. **Data Preparation**
     - Load dataset from JSON files
-    - Generate chat-formatted prompts
+    - Apply selected data preparation method (classic or game format)
+    - Generate chat-formatted prompts based on method selection
     - Tokenize with sequence length truncation
 
 3. **Model Training**

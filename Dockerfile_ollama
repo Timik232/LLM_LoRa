@@ -2,12 +2,12 @@ FROM ollama/ollama:latest
 
 RUN apt-get update && apt-get install -y curl
 
-VOLUME ["/root/.ollama", "/training_model/models"]
-RUN mkdir -p /training_model/models && chmod 777 /training_model/models
+VOLUME ["/root/.ollama", "/app/models"]
+RUN mkdir -p /app/models && chmod 777 /app/models
 
 EXPOSE 11434
 
-ENV OLLAMA_MODELS="/training_model/models"
+ENV OLLAMA_MODELS="/app/models"
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

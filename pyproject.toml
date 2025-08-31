@@ -31,7 +31,8 @@ ollama = "^0.4.7"
 ninja = "^1.11.1.4"
 mlflow = "^3.3.1"
 fire = "^0.7.0"
-
+optuna = "^4.4.0"
+python-dotenv = "^1.1.1"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.1.0"
@@ -41,7 +42,7 @@ autodocsumm = "^0.2.14"
 types-requests = "^2.32.0.20250306"
 types-pyyaml = "^6.0.12.20250326"
 uv = "^0.7.16"
-optuna = "^4.4.0"
+
 
 [[tool.poetry.source]]
 name = "torch-cuda"
@@ -75,11 +76,9 @@ select = ["E", "F", "W", "B", "N", "C90"]
 ignore = ["E203", "W605"]
 line-length = 95
 
-
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
-
 
 [tool.poetry-auto-export]
 output = "requirements.txt"

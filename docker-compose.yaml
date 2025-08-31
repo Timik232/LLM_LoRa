@@ -8,9 +8,9 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-      - ./models:/training_model/models
+      - ./models:/app/models
     environment:
-      - OLLAMA_MODELS=/training_model/models
+      - OLLAMA_MODELS=/app/models
     runtime: nvidia
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:11434" ]
@@ -24,15 +24,21 @@ services:
       dockerfile: Dockerfile
     container_name: llm_training
     volumes:
-      - ./models:/training_model/models
-      - ./data:/training_model/data
-      - ./conf:/training_model/conf
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./conf:/app/conf
     depends_on:
       ollama:
         condition: service_healthy
     environment:
       - OLLAMA_HOST=http://ollama:11434
     runtime: nvidia
+    networks:
+      - mlflow-network
 
 volumes:
   ollama_models:
+
+networks:
+  mlflow-network:
+    external: true

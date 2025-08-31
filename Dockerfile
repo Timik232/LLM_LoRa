@@ -30,18 +30,23 @@ RUN pip install --upgrade --ignore-installed wheel==0.45.1
 WORKDIR /llama.cpp
 RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
     cmake -B build && \
-    cmake --build build --config Release \
+    cmake --build build --config Release
 
-WORKDIR /training_model
+WORKDIR /tmp
+RUN git clone -b release-v1.2.1 https://github.com/airockchip/rknn-llm.git && \
+    pip install rknn-llm/rkllm-toolkit/rkllm_toolkit-1.2.1-cp311-cp311-linux_x86_64.whl && \
+    rm -rf rknn-llm
+
+WORKDIR /app
 COPY pyproject.toml poetry.lock ./
-RUN pip install poetry && poetry config virtualenvs.create false && poetry install --no-root --only main
+RUN pip install poetry && poetry install --no-root --only main
 
 COPY training_model ./training_model
 COPY testing_model ./testing_model
+COPY evaluation ./evaluation
 COPY data ./data
+COPY conf ./conf
 COPY main.py .
-
-WORKDIR /training_model
 COPY run_pipeline.sh .
 
 RUN chmod +x run_pipeline.sh

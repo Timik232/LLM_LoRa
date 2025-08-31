@@ -34,7 +34,7 @@ import wandb
 from .grpo_train import grpo_train
 from .dpo_train import dpo_train
 from .logging_config import configure_logging
-from .vika_utils import dataset_to_json
+from .data_preparation import dataset_to_json
 
 _LOGGING_BACKEND: Optional[str] = None
 
@@ -311,8 +311,8 @@ def data_preparation(
     with TemporaryDirectory() as temp_dir:
         train_json = os.path.join(temp_dir, "train.json")
         test_json = os.path.join(temp_dir, "test.json")
-        dataset_to_json(train_dataset, train_json)
-        dataset_to_json(test_dataset, test_json)
+        dataset_to_json(train_dataset, train_json, cfg.data_preparation.method)
+        dataset_to_json(test_dataset, test_json, cfg.data_preparation.method)
 
         from datasets import load_dataset
 
@@ -527,7 +527,7 @@ def run_sft_training(
     return global_steps, eval_loss
 
 
-def train(cfg: DictConfig) -> dict[str, int | Any]:
+def train(cfg: DictConfig) -> dict[str, int | Any]:  # noqa: C901
     """Execute full training pipeline.
 
     Args:
@@ -725,8 +725,8 @@ def merge_adapter_from_checkpoint(
 
 
 def convert_to_gguf(
-    model_path: str,
-    outfile: str,
+    model_path: str | bytes,
+    outfile: str | bytes,
     python_exe: str,
     outtype: str,
     cfg: DictConfig,
@@ -781,8 +781,8 @@ def convert_to_gguf(
 
 
 def convert_to_rkllm(
-    model_path: str,
-    output_dir: str,
+    model_path: str | bytes,
+    output_dir: str | bytes,
     target_platform: str = "rk3588",
     quantization: str = "w8a8",
     do_parallelize: bool = False,
@@ -1110,7 +1110,9 @@ def main_train(data_dir: str, cfg: DictConfig) -> Dict[str, Any]:
     result = train_pipeline(cfg)
     with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
         test_dataset = json.load(file)
-    dataset_to_json(test_dataset, cfg.testing.output_test_file)
+    dataset_to_json(
+        test_dataset, cfg.testing.output_test_file, cfg.data_preparation.method
+    )
     return result
 
 
