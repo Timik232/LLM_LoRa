@@ -1025,16 +1025,11 @@ def convert_to_rkllm(
         RuntimeError: If RKLLM conversion fails.
         ImportError: If rkllm-toolkit is not available.
     """
-    try:
-        from rkllm.api import RKLLM
-    except ImportError as e:
-        raise ImportError(
-            "RKLLM toolkit not found. RKLLM conversion requires the rkllm-toolkit package.\n"
-            "For Docker: Rebuild container with 'docker-compose build --no-cache'\n"
-            "For local development: RKLLM is not supported due to PyTorch version conflicts\n"
-            "The updated Dockerfile now includes improved RKLLM installation with fallbacks.\n"
-            f"Original error: {e}"
-        ) from e
+    # Enhanced RKLLM import with detailed diagnostics
+    rkllm_factory = safe_import_rkllm()
+
+    # Validate configuration before proceeding
+    validate_rkllm_config_params(target_platform, quantization, num_npu_core)
 
     # Create output directory
     output_path = Path(output_dir)
@@ -1053,7 +1048,7 @@ def convert_to_rkllm(
 
     try:
         # Initialize RKLLM converter
-        rkllm = RKLLM()
+        rkllm = rkllm_factory()
 
         # Load model configuration
         ret = rkllm.load_huggingface(
@@ -1110,6 +1105,108 @@ def convert_to_rkllm(
                 del rkllm
         except Exception as cleanup_error:
             logging.warning(f"Failed to cleanup RKLLM resources: {cleanup_error}")
+
+
+def safe_import_rkllm():
+    """Safely import RKLLM with detailed diagnostics."""
+    diagnostic_info = []
+
+    try:
+        import rkllm
+
+        diagnostic_info.append(f"✓ RKLLM package found at: {rkllm.__file__}")
+    except ImportError as e:
+        diagnostic_info.append(f"✗ RKLLM package import failed: {e}")
+
+        # Check if rknn-toolkit2 is available
+        try:
+            import rknn_toolkit2
+
+            diagnostic_info.append(f"✓ rknn-toolkit2 available: {rknn_toolkit2.__version__}")
+        except ImportError:
+            diagnostic_info.append("✗ rknn-toolkit2 not found")
+
+        # Check system dependencies
+        import subprocess
+        import sys
+        import tempfile
+
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "show",
+                    "rkllm-toolkit",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                diagnostic_info.append("✓ rkllm-toolkit package installed")
+                diagnostic_info.append(result.stdout[:500])  # Limit output
+            else:
+                diagnostic_info.append("✗ rkllm-toolkit package not found")
+        except Exception as subprocess_error:
+            diagnostic_info.append(f"✗ Failed to check installation: {subprocess_error}")
+
+        # Check if installation log exists in a portable temp directory
+        import os
+
+        log_file = os.path.join(tempfile.gettempdir(), "rkllm_install.log")
+        if os.path.exists(log_file):
+            try:
+                with open(log_file) as f:
+                    log_content = f.read()[-1000:]  # Last 1000 characters
+                diagnostic_info.append("Recent installation log:")
+                diagnostic_info.append(log_content)
+            except Exception:
+                diagnostic_info.append("✗ Failed to read installation log")
+
+        raise ImportError(
+            "RKLLM toolkit not available.\n"
+            "DIAGNOSTIC INFORMATION:\n" + "\n".join(diagnostic_info) + "\n\nSOLUTIONS:\n"
+            "1. For Docker: Rebuild container with 'docker-compose build --no-cache'\n"
+            "2. Check installation logs at /tmp/rkllm_install.log\n"
+            "3. Verify network connectivity for downloading RKLLM toolkit\n"
+            "4. For persistent issues, check GitHub releases at https://github.com/airockchip/rknn-llm/releases"
+        ) from e
+
+    try:
+        from rkllm.api import RKLLM
+
+        diagnostic_info.append("✓ RKLLM.api import successful")
+        return RKLLM
+    except ImportError as e:
+        diagnostic_info.append(f"✗ RKLLM.api import failed: {e}")
+        raise ImportError(
+            "RKLLM API not available.\n"
+            "DIAGNOSTIC INFORMATION:\n" + "\n".join(diagnostic_info)
+        ) from e
+
+
+def validate_rkllm_config_params(target_platform: str, quantization: str, num_npu_core: int):
+    """Validate RKLLM configuration parameters."""
+    # Validate platform
+    valid_platforms = ["rk3588", "rk3576", "rk3566", "rk3568"]
+    if target_platform not in valid_platforms:
+        raise ValueError(
+            f"Invalid target_platform: {target_platform}. " f"Valid options: {valid_platforms}"
+        )
+
+    # Validate quantization
+    valid_quantizations = ["w8a8", "w4a16", "w4a16_g128"]
+    if quantization not in valid_quantizations:
+        raise ValueError(
+            f"Invalid quantization: {quantization}. " f"Valid options: {valid_quantizations}"
+        )
+
+    # Validate NPU core count
+    if not (1 <= num_npu_core <= 3):
+        raise ValueError(f"Invalid num_npu_core: {num_npu_core}. " "Must be between 1 and 3")
+
+    logging.info("✓ RKLLM configuration parameters validated successfully")
 
 
 def rkllm_quantize(

@@ -33,32 +33,13 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
     cmake -B build && \
     cmake --build build --config Release
 
-# Install RKLLM dependencies
-RUN pip install rknn-toolkit2 -i https://mirrors.aliyun.com/pypi/simple
+# Install RKLLM toolkit using robust installation script
+COPY scripts/install_rkllm.sh /tmp/install_rkllm.sh
+RUN chmod +x /tmp/install_rkllm.sh && /tmp/install_rkllm.sh
 
-# Download and install RKLLM toolkit
-WORKDIR /tmp
-RUN wget -q https://github.com/airockchip/rknn-llm/releases/download/v1.0.11/rkllm_toolkit-1.0.11-cp311-cp311-linux_x86_64.whl || \
-    wget -q https://github.com/airockchip/rknn-llm/releases/download/v1.0.10/rkllm_toolkit-1.0.10-cp311-cp311-linux_x86_64.whl || \
-    wget -q https://github.com/airockchip/rknn-llm/releases/download/v1.0.9/rkllm_toolkit-1.0.9-cp311-cp311-linux_x86_64.whl || \
-    echo "No RKLLM toolkit wheel found, trying source installation"
-
-# Install the downloaded wheel file (try multiple versions)
-RUN pip install rkllm_toolkit-*.whl 2>/dev/null || echo "Warning: RKLLM toolkit wheel installation failed"
-
-# Fallback: Try to install from source if wheel installation failed
-RUN if ! python -c "import rkllm" 2>/dev/null; then \
-        echo "Attempting source installation of RKLLM toolkit..." && \
-        git clone https://github.com/airockchip/rknn-llm.git --depth 1 || true && \
-        if [ -d "rknn-llm/rkllm-toolkit" ]; then \
-            cd rknn-llm/rkllm-toolkit && \
-            pip install . 2>/dev/null || echo "Source installation also failed"; \
-        fi && \
-        rm -rf rknn-llm; \
-    fi
-
-# Clean up downloaded files
-RUN rm -f rkllm_toolkit-*.whl
+# Validate RKLLM installation
+RUN python -c "import rkllm; from rkllm.api import RKLLM; print('✓ RKLLM installation verified successfully')" || \
+    (echo "✗ RKLLM installation validation failed" && cat /tmp/rkllm_install.log && exit 1)
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock ./
@@ -79,5 +60,9 @@ COPY main.py .
 COPY run_pipeline.sh .
 
 RUN chmod +x run_pipeline.sh
+
+# Add RKLLM-specific health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD python -c "import rkllm; from rkllm.api import RKLLM; print('RKLLM OK')" || exit 1
 
 CMD ["./run_pipeline.sh"]
