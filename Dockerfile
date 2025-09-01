@@ -33,13 +33,6 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
     cmake -B build && \
     cmake --build build --config Release
 
-# Install RKLLM toolkit using robust installation script
-COPY scripts/install_rkllm.sh /tmp/install_rkllm.sh
-RUN chmod +x /tmp/install_rkllm.sh && /tmp/install_rkllm.sh
-
-# Validate RKLLM installation
-RUN python -c "import rkllm; from rkllm.api import RKLLM; print('✓ RKLLM installation verified successfully')" || \
-    (echo "✗ RKLLM installation validation failed" && cat /tmp/rkllm_install.log && exit 1)
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock ./
@@ -60,9 +53,5 @@ COPY main.py .
 COPY run_pipeline.sh .
 
 RUN chmod +x run_pipeline.sh
-
-# Add RKLLM-specific health check
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD python -c "import rkllm; from rkllm.api import RKLLM; print('RKLLM OK')" || exit 1
 
 CMD ["./run_pipeline.sh"]

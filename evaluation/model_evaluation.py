@@ -115,7 +115,10 @@ def dataset_to_json_for_test(dataset: dict[str, Any], filename: str | Path) -> N
 
 
 def ollama_generate(
-    client: ollama.Client, model_name: str | bytes, prompt: str, schema: dict
+    client: ollama.Client,
+    model_name: str | bytes,
+    prompt: str,
+    schema: dict,
 ) -> dict:
     """
     Wrapper function to generate a response using Ollama's structured outputs.
@@ -153,7 +156,8 @@ def call_llm(prompt: str, model: str, client: OpenAI) -> str:
     """
 
     response = client.chat.completions.create(
-        model=model, messages=[{"role": "user", "content": prompt}]
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
     )
     if not response.choices:
         # Explicitly avoid hiding the source; do not chain to a different exception here

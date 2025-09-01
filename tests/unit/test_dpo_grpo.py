@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from datasets import Dataset
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 # Import modules to test
 from training_model.dpo_train import (
@@ -38,7 +38,7 @@ from training_model.grpo_train import (
 class TestDPOConfiguration:
     """Test DPO configuration validation and setup."""
 
-    def test_validate_dpo_config_success(self):
+    def test_validate_dpo_config_success(self) -> None:
         """Test successful DPO configuration validation."""
         # Create temporary data files
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -50,7 +50,7 @@ class TestDPOConfiguration:
                         "train_data": "dpo_dataset.json",
                     },
                     "paths": {"data_dir": "data"},
-                }
+                },
             )
 
             # Create test data files
@@ -64,7 +64,7 @@ class TestDPOConfiguration:
                         "prompt": "Test prompt",
                         "chosen": "Good response",
                         "rejected": "Bad response",
-                    }
+                    },
                 },
             }
 
@@ -78,21 +78,21 @@ class TestDPOConfiguration:
                 result = validate_dpo_config(cfg)
                 assert result is True
 
-    def test_validate_dpo_config_missing_params(self):
+    def test_validate_dpo_config_missing_params(self) -> None:
         """Test DPO configuration validation with missing parameters."""
         cfg = OmegaConf.create(
             {
                 "dpo": {
-                    "val_data": "dpo_test.json"
+                    "val_data": "dpo_test.json",
                     # Missing train_data
-                }
-            }
+                },
+            },
         )
 
         result = validate_dpo_config(cfg)
         assert result is False
 
-    def test_validate_dpo_config_missing_files(self):
+    def test_validate_dpo_config_missing_files(self) -> None:
         """Test DPO configuration validation with missing data files."""
         with tempfile.TemporaryDirectory() as temp_dir:
             cfg = OmegaConf.create(
@@ -102,7 +102,7 @@ class TestDPOConfiguration:
                         "train_data": "also_nonexistent.json",
                     },
                     "paths": {"data_dir": "data"},
-                }
+                },
             )
 
             with patch("training_model.dpo_train.get_original_cwd", return_value=temp_dir):
@@ -113,7 +113,7 @@ class TestDPOConfiguration:
 class TestDPODataPreparation:
     """Test DPO data preparation and processing."""
 
-    def test_prepare_dpo_data_success(self):
+    def test_prepare_dpo_data_success(self) -> None:
         """Test successful DPO data preparation."""
         with tempfile.TemporaryDirectory() as temp_dir:
             cfg = OmegaConf.create(
@@ -123,7 +123,7 @@ class TestDPODataPreparation:
                         "train_data": "dpo_dataset.json",
                     },
                     "paths": {"data_dir": "data"},
-                }
+                },
             )
 
             # Create test data
@@ -167,7 +167,7 @@ class TestDPODataPreparation:
                 assert "topic" in sample
                 assert "System: You are a helpful assistant" in sample["prompt"]
 
-    def test_prepare_dpo_data_invalid_structure(self):
+    def test_prepare_dpo_data_invalid_structure(self) -> None:
         """Test DPO data preparation with invalid data structure."""
         with tempfile.TemporaryDirectory() as temp_dir:
             cfg = OmegaConf.create(
@@ -177,7 +177,7 @@ class TestDPODataPreparation:
                         "train_data": "dpo_dataset.json",
                     },
                     "paths": {"data_dir": "data"},
-                }
+                },
             )
 
             # Create test data with missing fields
@@ -216,7 +216,7 @@ class TestDPODataPreparation:
 class TestGRPOConfiguration:
     """Test GRPO configuration validation and setup."""
 
-    def test_validate_grpo_config_success(self):
+    def test_validate_grpo_config_success(self) -> None:
         """Test successful GRPO configuration validation."""
         with tempfile.TemporaryDirectory() as temp_dir:
             cfg = OmegaConf.create(
@@ -227,7 +227,7 @@ class TestGRPOConfiguration:
                         "num_generations": 2,
                     },
                     "paths": {"data_dir": "data"},
-                }
+                },
             )
 
             # Create test data files
@@ -240,7 +240,7 @@ class TestGRPOConfiguration:
                     "topic1": {
                         "prompt": {"History": ["Test"], "UserInput": "Test input"},
                         "answer": {"Content": {"Action": "Test action"}},
-                    }
+                    },
                 },
             }
 
@@ -253,7 +253,7 @@ class TestGRPOConfiguration:
                 result = validate_grpo_config(cfg)
                 assert result is True
 
-    def test_validate_grpo_config_missing_params(self):
+    def test_validate_grpo_config_missing_params(self) -> None:
         """Test GRPO configuration validation with missing parameters."""
         cfg = OmegaConf.create(
             {
@@ -261,8 +261,8 @@ class TestGRPOConfiguration:
                     "val_data": "test_ru.json",
                     "train_data": "dataset_ru.json",
                     # Missing num_generations
-                }
-            }
+                },
+            },
         )
 
         result = validate_grpo_config(cfg)
@@ -272,7 +272,7 @@ class TestGRPOConfiguration:
 class TestGRPORewardFunction:
     """Test GRPO reward function and evaluation."""
 
-    def test_reward_function_correct_json(self):
+    def test_reward_function_correct_json(self) -> None:
         """Test reward function with correct JSON format."""
         completions = [
             '{"Content": {"Action": "Разговор"}}',
@@ -288,7 +288,7 @@ class TestGRPORewardFunction:
         assert rewards[1] == 0.0  # Wrong action
         assert rewards[2] == 1.0  # Correct match
 
-    def test_reward_function_invalid_json(self):
+    def test_reward_function_invalid_json(self) -> None:
         """Test reward function with invalid JSON."""
         completions = [
             "not json at all",
@@ -303,7 +303,7 @@ class TestGRPORewardFunction:
         assert len(rewards) == 4
         assert all(reward == -1.0 for reward in rewards)
 
-    def test_reward_function_missing_correct_answer(self):
+    def test_reward_function_missing_correct_answer(self) -> None:
         """Test reward function without correct answer."""
         completions = ['{"Content": {"Action": "Test"}}']
 
@@ -312,7 +312,7 @@ class TestGRPORewardFunction:
         assert len(rewards) == 1
         assert rewards[0] == -1.0
 
-    def test_test_reward_function(self):
+    def test_test_reward_function(self) -> None:
         """Test the reward function testing utility."""
         completions = [
             '{"Content": {"Action": "Разговор"}}',
@@ -333,7 +333,7 @@ class TestGRPORewardFunction:
 class TestGRPODataPreparation:
     """Test GRPO data preparation and processing."""
 
-    def test_prepare_grpo_data_success(self):
+    def test_prepare_grpo_data_success(self) -> None:
         """Test successful GRPO data preparation."""
         with tempfile.TemporaryDirectory() as temp_dir:
             cfg = OmegaConf.create(
@@ -343,7 +343,7 @@ class TestGRPODataPreparation:
                         "train_data": "dataset_ru.json",
                     },
                     "paths": {"data_dir": "data"},
-                }
+                },
             )
 
             # Create test data
@@ -394,7 +394,7 @@ class TestGRPODataPreparation:
                 assert "Available Actions:" in sample["prompt"]
                 assert "JSON object" in sample["prompt"]
 
-    def test_prepare_grpo_data_invalid_structure(self):
+    def test_prepare_grpo_data_invalid_structure(self) -> None:
         """Test GRPO data preparation with invalid data structure."""
         with tempfile.TemporaryDirectory() as temp_dir:
             cfg = OmegaConf.create(
@@ -404,7 +404,7 @@ class TestGRPODataPreparation:
                         "train_data": "dataset_ru.json",
                     },
                     "paths": {"data_dir": "data"},
-                }
+                },
             )
 
             # Create test data with invalid structure
@@ -443,7 +443,7 @@ class TestTrainingIntegration:
 
     @patch("training_model.dpo_train.DPOTrainer")
     @patch("training_model.dpo_train.DPOConfig")
-    def test_dpo_train_integration(self, mock_config, mock_trainer):
+    def test_dpo_train_integration(self, mock_trainer) -> None:
         """Test DPO training integration."""
         # Mock configuration
         cfg = OmegaConf.create(
@@ -475,7 +475,7 @@ class TestTrainingIntegration:
                     "load_best": False,
                 },
                 "other": {"cutoff_len": 2048},
-            }
+            },
         )
 
         # Mock trainer
@@ -490,10 +490,10 @@ class TestTrainingIntegration:
 
         # Mock data preparation
         mock_train_data = Dataset.from_list(
-            [{"prompt": "test", "chosen": "good", "rejected": "bad"}]
+            [{"prompt": "test", "chosen": "good", "rejected": "bad"}],
         )
         mock_val_data = Dataset.from_list(
-            [{"prompt": "test2", "chosen": "good2", "rejected": "bad2"}]
+            [{"prompt": "test2", "chosen": "good2", "rejected": "bad2"}],
         )
 
         with (
@@ -511,7 +511,7 @@ class TestTrainingIntegration:
 
     @patch("training_model.grpo_train.GRPOTrainer")
     @patch("training_model.grpo_train.GRPOConfig")
-    def test_grpo_train_integration(self, mock_config, mock_trainer):
+    def test_grpo_train_integration(self, mock_trainer) -> None:
         """Test GRPO training integration."""
         # Mock configuration
         cfg = OmegaConf.create(
@@ -546,7 +546,7 @@ class TestTrainingIntegration:
                     "save_total_limit": 1,
                     "load_best": False,
                 },
-            }
+            },
         )
 
         # Mock trainer
@@ -563,10 +563,10 @@ class TestTrainingIntegration:
 
         # Mock data preparation
         mock_train_data = Dataset.from_list(
-            [{"prompt": "test prompt", "correct_answer": "Разговор"}]
+            [{"prompt": "test prompt", "correct_answer": "Разговор"}],
         )
         mock_val_data = Dataset.from_list(
-            [{"prompt": "test prompt2", "correct_answer": "Игра"}]
+            [{"prompt": "test prompt2", "correct_answer": "Игра"}],
         )
 
         with (
@@ -586,7 +586,7 @@ class TestTrainingIntegration:
 class TestDataFormatValidation:
     """Test data format validation and structure."""
 
-    def test_dpo_data_format_validation(self):
+    def test_dpo_data_format_validation(self) -> None:
         """Test DPO data format validation against schema."""
         # Load actual DPO data files if they exist
         project_root = Path(__file__).parent.parent
@@ -610,7 +610,7 @@ class TestDataFormatValidation:
                 assert isinstance(example["chosen"], str)
                 assert isinstance(example["rejected"], str)
 
-    def test_grpo_data_format_requirements(self):
+    def test_grpo_data_format_requirements(self) -> None:
         """Test GRPO data format requirements."""
         # Test expected GRPO data structure
         test_data = {
@@ -623,7 +623,7 @@ class TestDataFormatValidation:
                         "UserInput": "user input",
                     },
                     "answer": {"Content": {"Action": "Action1"}},
-                }
+                },
             },
         }
 
@@ -646,7 +646,7 @@ class TestDataFormatValidation:
 class TestErrorHandling:
     """Test error handling and edge cases."""
 
-    def test_dpo_train_validation_failure(self):
+    def test_dpo_train_validation_failure(self) -> None:
         """Test DPO training with validation failure."""
         cfg = OmegaConf.create({"dpo": {}})  # Missing required fields
 
@@ -656,7 +656,7 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="DPO configuration validation failed"):
             dpo_train(mock_model, mock_tokenizer, cfg)
 
-    def test_grpo_train_validation_failure(self):
+    def test_grpo_train_validation_failure(self) -> None:
         """Test GRPO training with validation failure."""
         cfg = OmegaConf.create({"grpo": {}})  # Missing required fields
 
@@ -666,7 +666,7 @@ class TestErrorHandling:
         with pytest.raises(ValueError, match="GRPO configuration validation failed"):
             grpo_train(mock_model, mock_tokenizer, cfg, None)
 
-    def test_reward_function_exception_handling(self):
+    def test_reward_function_exception_handling(self) -> None:
         """Test reward function with exceptions."""
         completions = [
             '{"Content": {"Action": "Test"}}',  # Valid
@@ -687,7 +687,7 @@ class TestErrorHandling:
 
 # Pytest fixtures for common test data
 @pytest.fixture
-def sample_dpo_config():
+def sample_dpo_config() -> DictConfig:
     """Fixture providing sample DPO configuration."""
     return OmegaConf.create(
         {
@@ -717,12 +717,12 @@ def sample_dpo_config():
                 "load_best": False,
             },
             "other": {"cutoff_len": 2048},
-        }
+        },
     )
 
 
 @pytest.fixture
-def sample_grpo_config():
+def sample_grpo_config() -> DictConfig:
     """Fixture providing sample GRPO configuration."""
     return OmegaConf.create(
         {
@@ -757,12 +757,12 @@ def sample_grpo_config():
                 "save_total_limit": 1,
                 "load_best": False,
             },
-        }
+        },
     )
 
 
 @pytest.fixture
-def sample_dpo_data():
+def sample_dpo_data() -> dict:
     """Fixture providing sample DPO data."""
     return {
         "system": "You are a helpful assistant",
@@ -785,7 +785,7 @@ def sample_dpo_data():
 
 
 @pytest.fixture
-def sample_grpo_data():
+def sample_grpo_data() -> dict:
     """Fixture providing sample GRPO data."""
     return {
         "system": "You are Vika, a helpful AI assistant",

@@ -18,6 +18,17 @@ services:
       timeout: 5s
       retries: 5
 
+  rkllm_converter:
+    build:
+      context: rkllm_files/.
+      dockerfile: Dockerfile.rkllm
+    container_name: rkllm_converter
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+
   llm_training:
     build:
       context: .

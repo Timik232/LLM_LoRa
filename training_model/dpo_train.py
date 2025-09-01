@@ -121,7 +121,7 @@ def prepare_dpo_data(cfg: DictConfig) -> tuple[Dataset, Dataset]:
                     "chosen": chosen,
                     "rejected": rejected,
                     "topic": topic_key,  # Add topic for debugging
-                }
+                },
             )
 
             logging.debug(f"Processed DPO topic {topic_key}")
@@ -208,7 +208,7 @@ def dpo_train(
     logging.info(
         f"DPO Config: beta={dpo_config.beta}, "
         f"loss_type={dpo_config.loss_type}, "
-        f"max_length={dpo_config.max_length}"
+        f"max_length={dpo_config.max_length}",
     )
 
     trainer = DPOTrainer(

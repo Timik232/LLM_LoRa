@@ -23,7 +23,9 @@ def get_user_prompt(data: str) -> str:
 
 
 def dataset_to_json(
-    dataset: dict[str, Any], filename: str | Path, method: str = "classic"
+    dataset: dict[str, Any],
+    filename: str | Path,
+    method: str = "classic",
 ) -> list[dict[str, str]]:
     """
     Convert dataset to JSON lines format and save to a file.
@@ -106,7 +108,7 @@ def transform_topics(topics: dict[str, Any]) -> list[dict[str, str]]:
     return transformed
 
 
-def do_transform():
+def do_transform() -> None:
     """One run function to convert the dataset."""
     import logging
 
@@ -125,7 +127,8 @@ def do_transform():
         json.dump(result, f, ensure_ascii=False, indent=4)
 
     logger.info(
-        "Dataset successfully converted to new format and saved to %s", output_file_path
+        "Dataset successfully converted to new format and saved to %s",
+        output_file_path,
     )
 
 

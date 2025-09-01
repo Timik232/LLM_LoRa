@@ -76,7 +76,7 @@ def debug_reward_function(test_completions: list[str], correct_answer: str) -> d
     return stats
 
 
-def reward_function(completions: list[str], **kwargs) -> list[float]:
+def reward_function(completions: list[str], **kwargs: dict) -> list[float]:
     """Compute rewards for GRPO training based on action matching.
 
     This function follows TRL's expected signature for reward functions.
@@ -95,7 +95,7 @@ def reward_function(completions: list[str], **kwargs) -> list[float]:
     rewards: list[float] = []
     if correct_answer is None:
         logging.warning(
-            "No 'correct_answer' found in batch kwargs, applying penalty to all completions"
+            "No 'correct_answer' found in batch kwargs, applying penalty to all completions",
         )
         return [-1.0] * len(completions)
 
@@ -138,12 +138,13 @@ def reward_function(completions: list[str], **kwargs) -> list[float]:
                 rewards.append(0.0)
                 logging.debug(
                     f"Completion {i} mismatch - generated: '{generated_action}', "
-                    f"expected: '{correct_answer}'"
+                    f"expected: '{correct_answer}'",
                 )
 
         except json.JSONDecodeError as e:
             logging.debug(
-                f"Completion {i} JSON decode error: {e} - " f"Content: '{completion[:100]}...'"
+                f"Completion {i} JSON decode error: {e} - "
+                f"Content: '{completion[:100]}...'",
             )
             rewards.append(-1.0)
         except Exception as e:
@@ -252,7 +253,7 @@ def prepare_grpo_data(
                     "prompt": prompt_str,
                     "correct_answer": correct_action,
                     "topic": topic_key,  # Add topic for debugging
-                }
+                },
             )
 
             logging.debug(f"Processed topic {topic_key}: action={correct_action}")
@@ -361,7 +362,7 @@ def grpo_train(
 
     logging.info(
         f"GRPO Config: epsilon={grpo_config.epsilon}, beta={grpo_config.beta}, "
-        f"loss_type={grpo_config.loss_type}, num_generations={grpo_config.num_generations}"
+        f"loss_type={grpo_config.loss_type}, num_generations={grpo_config.num_generations}",
     )
 
     trainer = GRPOTrainer(

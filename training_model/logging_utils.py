@@ -218,7 +218,7 @@ def log_evaluation_metrics(metrics: dict[str, Any]) -> None:
         if numeric_metrics:
             mlflow.log_metrics(numeric_metrics)
             logging.info(
-                f"Logged evaluation metrics to MLflow: {list(numeric_metrics.keys())}"
+                f"Logged evaluation metrics to MLflow: {list(numeric_metrics.keys())}",
             )
 
     except Exception as e:

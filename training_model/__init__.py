@@ -17,13 +17,15 @@ from .optuna import optuna_optimize
 class LLMLoRaCLI:
     """CLI interface for LLM LoRa training pipeline using Fire."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize CLI with default config directory."""
         self.config_dir = None
         self.cfg = None
 
     def _load_config(
-        self, config_name: str = "config", config_dir: str | None = None
+        self,
+        config_name: str = "config",
+        config_dir: str | None = None,
     ) -> DictConfig:
         """Load Hydra configuration programmatically."""
         if config_dir is None:
@@ -65,7 +67,12 @@ class LLMLoRaCLI:
                 target = target[k]
             target[keys[-1]] = value
 
-    def train(self, config_name: str = "config", config_dir: str | None = None, **overrides):
+    def train(
+        self,
+        config_name: str = "config",
+        config_dir: str | None = None,
+        **overrides: dict,
+    ) -> None:
         """
         Start model training with specified configuration.
 
@@ -96,8 +103,11 @@ class LLMLoRaCLI:
         logger.info("[SUCCESS] Training completed successfully!")
 
     def optimize(
-        self, config_name: str = "config", config_dir: str | None = None, **overrides
-    ):
+        self,
+        config_name: str = "config",
+        config_dir: str | None = None,
+        **overrides: dict,
+    ) -> None:
         """
         Run Optuna hyperparameter optimization.
 
@@ -133,8 +143,8 @@ class LLMLoRaCLI:
         config_dir: str | None = None,
         gguf: bool = True,
         rkllm: bool = False,
-        **overrides,
-    ):
+        **overrides: dict,
+    ) -> None:
         """
         Run only model conversion (GGUF and/or RKLLM).
 
@@ -182,10 +192,12 @@ class LLMLoRaCLI:
             # Get RKLLM parameters from config
             rkllm_config = cfg.get("model", {}).get("rkllm", {})
             target_platform = overrides.get(
-                "target_platform", rkllm_config.get("target_platform", "rk3588")
+                "target_platform",
+                rkllm_config.get("target_platform", "rk3588"),
             )
             quantization = overrides.get(
-                "quantization", rkllm_config.get("quantization", "w8a8")
+                "quantization",
+                rkllm_config.get("quantization", "w8a8"),
             )
 
             convert_to_rkllm(
@@ -201,11 +213,11 @@ class LLMLoRaCLI:
 
         if conversions_performed:
             logger.info(
-                f"[SUCCESS] Model conversion completed: {', '.join(conversions_performed)}"
+                f"[SUCCESS] Model conversion completed: {', '.join(conversions_performed)}",
             )
         else:
             logger.warning(
-                "[WARNING] No conversions performed. Use --gguf=True or --rkllm=True"
+                "[WARNING] No conversions performed. Use --gguf=True or --rkllm=True",
             )
 
     def test(
@@ -213,8 +225,8 @@ class LLMLoRaCLI:
         config_name: str = "config",
         config_dir: str | None = None,
         manual_setup: bool = True,
-        **overrides,
-    ):
+        **overrides: dict,
+    ) -> None:
         """
         Run model testing and evaluation.
 
@@ -256,8 +268,8 @@ class LLMLoRaCLI:
         config_dir: str | None = None,
         use_optuna: bool = False,
         skip_test: bool = False,
-        **overrides,
-    ):
+        **overrides: dict,
+    ) -> None:
         """
         Run complete pipeline: train -> convert -> test.
 

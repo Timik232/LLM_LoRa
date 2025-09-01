@@ -53,7 +53,7 @@ def main(cfg: DictConfig) -> None:
         )
 
 
-def legacy_main():
+def legacy_main() -> None:
     """
     Legacy main function that loads config with Hydra decorator.
     Kept for backward compatibility but no longer used as primary entry point.

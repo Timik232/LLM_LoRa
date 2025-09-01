@@ -57,7 +57,7 @@ def tokens_init(cfg: DictConfig) -> Run:
     # wandb.login(key=wb_token)
 
     logger.debug(
-        f"Using Weights & Biases token: {wb_token[:8]}..." if wb_token else "No token found"
+        f"Using Weights & Biases token: {wb_token[:8]}..." if wb_token else "No token found",
     )
     run = wandb.init(
         project=cfg.wandb.project_name,

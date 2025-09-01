@@ -11,13 +11,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer
 
 import training_model.one_file_train as oft
@@ -55,7 +55,7 @@ def tokenizer() -> AutoTokenizer:
         if tok.pad_token_id is None:
             tok.pad_token_id = tok.convert_tokens_to_ids(pad)
 
-    def apply_chat_template(messages, tokenize: bool = False):
+    def apply_chat_template(messages: list, tokenize: bool = False) -> str:
         parts = [f"{m['role'].upper()}: {m['content']}" for m in messages]
         return "\n".join(parts)
 
@@ -64,7 +64,7 @@ def tokenizer() -> AutoTokenizer:
 
 
 @pytest.fixture
-def test_config():
+def test_config() -> DictConfig:
     """Return a config object matching fields used by one_file_train functions."""
     return OmegaConf.create(
         {
@@ -90,7 +90,7 @@ def test_config():
                 "model_type": "hf",
             },
             "training": {"seed": 42, "use_grpo": False, "use_sft": False},
-        }
+        },
     )
 
 
@@ -155,7 +155,12 @@ def test_generate_and_tokenize_prompt(tokenizer: AutoTokenizer) -> None:
     assert len(result["input_ids"]) == 128
 
 
-def test_data_preparation(test_config, tokenizer, sample_dataset, monkeypatch) -> None:
+def test_data_preparation(
+    test_config: DictConfig,
+    tokenizer: AutoTokenizer,
+    sample_dataset: str,
+    monkeypatch,
+) -> None:
     """data_preparation should load dataset dict
     and return train/val Dataset objects."""
     test_config.paths.data_dir = "."
@@ -190,7 +195,11 @@ def test_copy_data(temp_dir: str) -> None:
         assert f.read() == "test content"
 
 
-def test_model_merge_for_converting(test_config, temp_dir: str, monkeypatch) -> None:
+def test_model_merge_for_converting(
+    test_config: DictConfig,
+    temp_dir: str,
+    monkeypatch,
+) -> None:
     """Mock HF/PEFT loading calls inside
     model_merge_for_converting and assert they were used."""
     calls = {
@@ -200,36 +209,36 @@ def test_model_merge_for_converting(test_config, temp_dir: str, monkeypatch) -> 
     }
 
     class FakeModel:
-        def resize_token_embeddings(self, _):
+        def resize_token_embeddings(self, _: Any) -> None:
             pass
 
-        def save_pretrained(self, _):
+        def save_pretrained(self, _: Any) -> None:
             pass
 
     class FakePeft:
         @staticmethod
-        def from_pretrained(_model, _adapter_path):
+        def from_pretrained(_model, _adapter_path) -> SimpleNamespace:
             calls["peft_from_pretrained"] = True
             return SimpleNamespace(
-                merge_and_unload=lambda: SimpleNamespace(save_pretrained=lambda _p: None)
+                merge_and_unload=lambda: SimpleNamespace(save_pretrained=lambda _p: None),
             )
 
     class FakeAutoModelClass:
         @classmethod
-        def from_pretrained(cls, *_args, **_kwargs):
+        def from_pretrained(cls, *_args: Any, **_kwargs: Any) -> FakeModel:
             calls["auto_from_pretrained"] = True
             return FakeModel()
 
     class FakeTokenizer:
-        def __len__(self):
+        def __len__(self) -> int:
             return 100
 
-        def save_pretrained(self, _):
+        def save_pretrained(self, _) -> None:
             pass
 
     class FakeAutoTokenizerClass:
         @classmethod
-        def from_pretrained(cls, *_args, **_kwargs):
+        def from_pretrained(cls, *_args: Any, **_kwargs: Any) -> FakeTokenizer:
             calls["tokenizer_from_pretrained"] = True
             return FakeTokenizer()
 
@@ -245,7 +254,7 @@ def test_model_merge_for_converting(test_config, temp_dir: str, monkeypatch) -> 
     assert calls["peft_from_pretrained"]
 
 
-def test_convert_to_gguf(test_config, temp_dir: str, monkeypatch) -> None:
+def test_convert_to_gguf(test_config: DictConfig, temp_dir: str, monkeypatch) -> None:
     """convert_to_gguf should call subprocess.run when conversion script exists."""
     test_config.paths.llama_cpp_dir = temp_dir
     conv_script = Path(temp_dir) / "convert_hf_to_gguf.py"
@@ -255,7 +264,7 @@ def test_convert_to_gguf(test_config, temp_dir: str, monkeypatch) -> None:
     model_path = Path(temp_dir) / "model"
     model_path.mkdir(parents=True, exist_ok=True)
 
-    def fake_run(*args, **kwargs):
+    def fake_run(*_args: Any, **_kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(returncode=0)
 
     # Patch only subprocess.run (do not replace the module object)
@@ -280,7 +289,7 @@ def test_quantize_model_success(temp_dir: str, monkeypatch) -> None:
     with quantizer_path.open("w", encoding="utf-8") as f:
         f.write("")
 
-    def fake_run(*args, **kwargs):
+    def fake_run(*_args: Any, **_kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(stdout=b"ok", stderr=b"")
 
     monkeypatch.setattr(oft.subprocess, "run", fake_run)
@@ -302,7 +311,7 @@ def test_quantize_model_failure(temp_dir: str, monkeypatch) -> None:
     with quantizer_path.open("w", encoding="utf-8") as f:
         f.write("")
 
-    def fake_run_raises(*args, **kwargs):
+    def fake_run_raises(*_args: Any, **_kwargs: Any) -> None:
         # raise the real CalledProcessError from the real subprocess module
         raise subprocess.CalledProcessError(returncode=1, cmd="llama-quantize")
 

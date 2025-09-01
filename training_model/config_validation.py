@@ -327,7 +327,7 @@ def validate_logging_config(cfg: DictConfig) -> bool:
         if logging_cfg.logging_backend not in valid_backends:
             logger.error(
                 f"Invalid logging backend: {logging_cfg.logging_backend}. "
-                f"Valid: {valid_backends}"
+                f"Valid: {valid_backends}",
             )
             return False
 
@@ -375,7 +375,8 @@ def validate_environment_config(cfg: DictConfig) -> bool:
             return False
 
     if (hasattr(cfg, "logging") and cfg.logging.get("logging_backend") == "wandb") or hasattr(
-        cfg, "wandb"
+        cfg,
+        "wandb",
     ):
         wandb_token = os.getenv("WANB_API")
         if not wandb_token:

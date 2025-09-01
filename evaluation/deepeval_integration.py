@@ -61,7 +61,9 @@ def _get_mistral_model() -> "CustomMistralModel":
 
     mistral_api = os.getenv("MISTRAL_API", "")
     return CustomMistralModel(
-        api_key=mistral_api, model="mistral-small-latest", temperature=0.7
+        api_key=mistral_api,
+        model="mistral-small-latest",
+        temperature=0.7,
     )
 
 
@@ -109,7 +111,7 @@ def set_local_model_via_cli(
     except FileNotFoundError:
         logger.exception(
             "Command not found. Make sure "
-            "Python and deepeval are installed and available in PATH."
+            "Python and deepeval are installed and available in PATH.",
         )
 
 
@@ -154,12 +156,14 @@ def test_mention_number_of_values(user_input: str, output: str) -> bool:
         ],
     )
     return assert_test(
-        test_case=LLMTestCase(input=user_input, actual_output=output), metrics=[metric]
+        test_case=LLMTestCase(input=user_input, actual_output=output),
+        metrics=[metric],
     )
 
 
 def test_from_dataset(
-    test_dataset: str | Path = "data/test_ru.json", test_file: str | Path = "test.json"
+    test_dataset: str | Path = "data/test_ru.json",
+    test_file: str | Path = "test.json",
 ) -> None:
     """
     Test the model using a dataset of prompts.
@@ -201,10 +205,15 @@ def test_from_dataset(
             passed_tests += 1
         except AssertionError:
             logger.exception(
-                "Test failed for request: %s. \nModel response %s.", user_input, model_answer
+                "Test failed for request: %s. \nModel response %s.",
+                user_input,
+                model_answer,
             )
 
     final_metric = passed_tests / total_tests if total_tests > 0 else 0
     logger.info(
-        "Final metric: %.2f (%s/%s tests passed)", final_metric, passed_tests, total_tests
+        "Final metric: %.2f (%s/%s tests passed)",
+        final_metric,
+        passed_tests,
+        total_tests,
     )

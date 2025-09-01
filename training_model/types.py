@@ -98,7 +98,10 @@ class ModelConverter(Protocol):
     """Protocol for different model conversion formats."""
 
     def convert(
-        self, model_path: PathLike, output_path: PathLike, **kwargs: Any
+        self,
+        model_path: PathLike,
+        output_path: PathLike,
+        **kwargs: Any,
     ) -> ConversionResult:
         """Convert model to specific format."""
         ...

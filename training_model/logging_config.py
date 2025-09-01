@@ -93,7 +93,7 @@ def configure_logging(level: int = logging.INFO) -> None:
         ColoredFormatter(
             fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
-        )
+        ),
     )
 
     root_logger.setLevel(level)
@@ -118,7 +118,12 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def log_dict(logger: logging.Logger, data: dict, level: int = logging.INFO, prefix: str = ""):
+def log_dict(
+    logger: logging.Logger,
+    data: dict,
+    level: int = logging.INFO,
+    prefix: str = "",
+) -> None:
     """Log dictionary contents in a structured format.
 
     Args:
@@ -144,9 +149,9 @@ def log_training_progress(
     logger: logging.Logger,
     step: int,
     total_steps: int,
-    loss: float = None,
-    metrics: dict = None,
-):
+    loss: float | None = None,
+    metrics: dict | None = None,
+) -> None:
     """Log training progress in a standardized format.
 
     Args:

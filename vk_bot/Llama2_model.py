@@ -72,7 +72,7 @@ def chat_saiga(message, model):
     if flag:
         result_list.append(
             "Введённое сообщение превышает допустимое количество символов в сообщении, "
-            "поэтому переведена будет лишь часть.\n"
+            "поэтому переведена будет лишь часть.\n",
         )
     for token in generator:
         token_str = model.detokenize([token]).decode("utf-8", errors="ignore")

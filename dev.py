@@ -83,7 +83,11 @@ def log_info(message: str) -> None:
 
 
 def run_command(
-    cmd: list[str], description: str, *, check: bool = True, cwd: Path | None = None
+    cmd: list[str],
+    description: str,
+    *,
+    check: bool = True,
+    cwd: Path | None = None,
 ) -> bool:
     """Run a command and handle output."""
     log_info("Running: %s", description)
@@ -124,7 +128,8 @@ def setup_environment() -> bool:
 
     # Install pre-commit hooks
     if not run_command(
-        ["poetry", "run", "pre-commit", "install"], "Installing pre-commit hooks"
+        ["poetry", "run", "pre-commit", "install"],
+        "Installing pre-commit hooks",
     ):
         return False
 
@@ -230,7 +235,8 @@ def run_quality_checks() -> bool:
 
     # Run pre-commit hooks
     if not run_command(
-        ["poetry", "run", "pre-commit", "run", "--all-files"], "Running pre-commit hooks"
+        ["poetry", "run", "pre-commit", "run", "--all-files"],
+        "Running pre-commit hooks",
     ):
         all_passed = False
 
@@ -328,8 +334,11 @@ def show_env_info() -> None:
 
     # Git info
     try:
+        git_path = shutil.which("git")
+        if git_path is None:
+            raise FileNotFoundError("Git executable not found.")
         result = subprocess.run(
-            ["git", "branch", "--show-current"],
+            [git_path, "branch", "--show-current"],
             capture_output=True,
             text=True,
             cwd=project_root,
@@ -337,9 +346,12 @@ def show_env_info() -> None:
         )
         if result.returncode == 0:
             logger.info("Git Branch: %s", result.stdout.strip())
+        git_path = shutil.which("git")
+        if git_path is None:
+            raise FileNotFoundError("Git executable not found.")
 
         result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            [git_path, "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
             cwd=project_root,
@@ -428,7 +440,9 @@ def main() -> None:
     """Main entry point."""
     # Configure logging for colored output
     logging.basicConfig(
-        level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()]
+        level=logging.INFO,
+        format="%(message)s",
+        handlers=[logging.StreamHandler()],
     )
 
     parser = argparse.ArgumentParser(
@@ -457,7 +471,9 @@ def main() -> None:
     # Test options
     parser.add_argument("--gpu", action="store_true", help="Run GPU tests (for test command)")
     parser.add_argument(
-        "--unit", action="store_true", help="Run unit tests only (for test command)"
+        "--unit",
+        action="store_true",
+        help="Run unit tests only (for test command)",
     )
     parser.add_argument(
         "--integration",
