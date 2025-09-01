@@ -8,7 +8,7 @@ This document describes the Hydra configuration structure and parameters used fo
 Configuration Overview
 ----------------------------
 
-The configuration is organized into several sections controlling different aspects of the training pipeline:
+The configuration is organized into several sections controlling different aspects of the training pipeline. The framework uses **Hydra Config Groups** for environment-specific settings, providing automatic configuration management without manual file editing.
 
 .. code-block:: yaml
 
@@ -16,6 +16,7 @@ The configuration is organized into several sections controlling different aspec
       - _self_
       - override hydra/job_logging: disabled
       - override hydra/hydra_logging: disabled
+      - environment: docker  # Default environment config (use 'local' for Windows development)
 
     model:
       # Model architecture and training parameters
@@ -111,6 +112,60 @@ Defaults Configuration
       - Disables Hydra's default job logging
     * - ``override hydra/hydra_logging``
       - Disables Hydra's internal system logging
+    * - ``environment``
+      - Selects environment-specific configuration (docker/local)
+
+Environment Configuration Groups
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The framework uses Hydra Config Groups to automatically handle environment-specific settings, eliminating the need to manually comment/uncomment configuration lines.
+
+**Available Environment Configurations:**
+
+.. list-table:: Environment Config Groups
+    :widths: 25 30 45
+    :header-rows: 1
+
+    * - Environment
+      - Config File
+      - Description
+    * - docker (default)
+      - ``conf/environment/docker.yaml``
+      - Docker/production environment with system python
+    * - local
+      - ``conf/environment/local.yaml``
+      - Local Windows development with virtual environment
+
+**Usage Examples:**
+
+.. code-block:: bash
+
+    # Use Docker/production environment (default)
+    python main.py
+
+    # Use local development environment
+    python main.py environment=local
+
+    # Combine with other overrides
+    python main.py environment=local model.train_steps=100
+
+**Environment Config Files:**
+
+.. code-block:: yaml
+
+    # conf/environment/docker.yaml
+    # @package paths
+    # Docker/Production environment configuration
+    venv_python_path: "python"  # Use system python in Docker containers
+
+.. code-block:: yaml
+
+    # conf/environment/local.yaml
+    # @package paths
+    # Local Windows development environment configuration
+    venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
+
+The ``@package paths`` directive ensures these settings only override the ``paths`` section of the main configuration, keeping files small and focused on environment differences.
 
 Model Configuration
 ~~~~~~~~~~~~~~~~~~~
@@ -336,6 +391,9 @@ Paths Configuration
     * - rkllm_toolkit_path
       - Path to RKLLM conversion toolkit
       - "path/to/rkllm-toolkit"
+    * - venv_python_path
+      - Python executable path (managed by environment configs)
+      - Auto-configured via environment parameter
 
 Model Conversion and Output Formats
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -397,7 +455,7 @@ Fire CLI Configuration
       - true
     * - available_commands
       - List of available CLI commands
-      - ["train_model", "evaluate_model", "convert_to_gguf"]
+      - [\"train\", \"test\", \"convert\", \"optimize\", \"pipeline\"]
     * - cli_help_enabled
       - Enable automatic help generation
       - true
@@ -454,7 +512,7 @@ The complete training process follows these stages:
 
             # Conditional GGUF conversion (NEW LOGIC)
             if cfg.model.quant.get("enabled", True):
-                convert_to_gguf(tmp_dir, cfg)
+            # Use CLI for conversion instead\n            subprocess.run([\"python\", \"main.py\", \"convert\", \"--gguf=True\"])
                 quantize_model(cfg)
                 copy_data(quantized_file, cfg.model.quant.gguf_dir)
             else:

@@ -1,9 +1,9 @@
 # Configuration file for the Sphinx documentation builder.
-import os
 import sys
+from pathlib import Path
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, project_root)
+project_root = Path(__file__).parent.parent.resolve()
+sys.path.insert(0, str(project_root))
 
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
@@ -12,7 +12,7 @@ sys.path.insert(0, project_root)
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "LLM-LoRA Framework"
-copyright = "2025, Timur Komolov"
+copyright_notice = "2025, Timur Komolov"
 author = "Timur Komolov"
 release = "0.1.0"
 version = "0.1.0"
@@ -195,7 +195,7 @@ texinfo_documents = [
 epub_title = project
 epub_author = author
 epub_publisher = author
-epub_copyright = copyright
+epub_copyright = copyright_notice
 epub_exclude_files = ["search.html"]
 
 # -- Extension configuration -------------------------------------------------

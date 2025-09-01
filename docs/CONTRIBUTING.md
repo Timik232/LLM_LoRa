@@ -56,7 +56,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 1. **Fork the Repository**
    ```bash
    # Fork on GitHub, then clone your fork
-   git clone https://github.com/YOUR-USERNAME/LLM_LoRa.git
+   git clone https://github.com/timik232/LLM_LoRa.git
    cd LLM_LoRa
    ```
 

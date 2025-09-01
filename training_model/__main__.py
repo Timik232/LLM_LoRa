@@ -1,6 +1,6 @@
 import json
 import logging
-import os
+from pathlib import Path
 
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
@@ -35,14 +35,14 @@ def main(cfg: DictConfig) -> None:
     """
     configure_logging(logging.DEBUG)
     # Use current working directory since get_original_cwd() requires Hydra decorator
-    data_dir = os.path.join(os.getcwd(), cfg.paths.data_dir)
+    data_dir = Path.cwd() / cfg.paths.data_dir
     if cfg.training.use_optuna_optimize:
         optuna_optimize(data_dir, cfg)
     else:
         main_train(data_dir, cfg)
 
     if cfg.testing.manual_lmstudio_test:
-        with open(cfg.testing.test_dataset, "r", encoding="utf-8") as file:
+        with Path(cfg.testing.test_dataset).open(encoding="utf-8") as file:
             test_dataset = json.load(file)
         dataset_to_json_for_test(test_dataset, cfg.testing.output_test_file)
         input("Load model into lmstudio and press Enter to continue...")
@@ -58,8 +58,8 @@ def legacy_main():
     Legacy main function that loads config with Hydra decorator.
     Kept for backward compatibility but no longer used as primary entry point.
     """
-    config_dir = os.path.join(os.getcwd(), "conf")
-    config_dir = os.path.abspath(config_dir)
+    config_dir = Path.cwd() / "conf"
+    config_dir = config_dir.resolve()
 
     with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
         cfg = compose(config_name="config")

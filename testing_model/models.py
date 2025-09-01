@@ -1,7 +1,7 @@
 """Model implementations for testing and evaluation framework"""
+
 import asyncio
 import time
-from typing import Any, Optional
 
 from deepeval.models import DeepEvalBaseLLM
 from langchain_openai import ChatOpenAI
@@ -21,9 +21,9 @@ class CustomLocalModel(DeepEvalBaseLLM):
         self,
         model: str = "vikhr-yandexgpt-5-lite-8b-it_gguf",
         url: str = "http://localhost:1234/v1/",
-        *args: Any,
-        **kwargs: Any,
-    ):
+        *args: object,
+        **kwargs: object,
+    ) -> None:
         """
         Initialize the custom local model.
 
@@ -100,9 +100,9 @@ class CustomMistralModel(DeepEvalBaseLLM):
         api_key: str,
         model: str = "mistral-small-latest",
         temperature: float = 0.1,
-        *args: Any,
-        **kwargs: Any,
-    ):
+        *args: object,
+        **kwargs: object,
+    ) -> None:
         """
         Initialize the custom Mistral model.
 
@@ -114,7 +114,7 @@ class CustomMistralModel(DeepEvalBaseLLM):
         self.client = Mistral(api_key=api_key)
         self.model_name = model
         self.temperature = temperature
-        self.last_request_time: Optional[float] = None
+        self.last_request_time: float | None = None
         self.rate_limit_delay = 1.2  # 1.2 seconds to stay safely under limit
 
     def _enforce_rate_limit(self) -> None:

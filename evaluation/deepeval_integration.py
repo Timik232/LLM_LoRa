@@ -1,8 +1,11 @@
 """DeepEval integration for model evaluation framework"""
+
+import contextlib
 import json
 import logging
 import os
 import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import requests
@@ -10,10 +13,25 @@ from deepeval import assert_test
 from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 from hydra import compose, initialize
-from omegaconf import DictConfig
 
 if TYPE_CHECKING:
-    pass
+    from omegaconf import DictConfig
+
+    from testing_model.models import CustomLocalModel, CustomMistralModel
+
+
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
+try:
+    from testing_model.models import CustomLocalModel, CustomMistralModel
+except Exception:
+    CustomLocalModel = None
+    CustomMistralModel = None
+
+logger = logging.getLogger(__name__)
 
 
 def _load_environment_if_needed() -> None:
@@ -21,35 +39,37 @@ def _load_environment_if_needed() -> None:
     try:
         with initialize(version_base=None, config_path="../conf"):
             cfg: DictConfig = compose(config_name="config")
-            if cfg.get("environment", {}).get("use_dotenv", False):
-                from dotenv import load_dotenv
-
-                load_dotenv()
-    except Exception:
+            if cfg.get("environment", {}).get("use_dotenv", False) and load_dotenv:
+                # Ignore dotenv failures during initialization
+                with contextlib.suppress(Exception):
+                    load_dotenv()
+    except (ImportError, OSError):
         # Fallback: try to load dotenv if available (for backward compatibility)
-        try:
-            from dotenv import load_dotenv
-
-            load_dotenv()
-        except ImportError:
-            pass
+        if load_dotenv:
+            with contextlib.suppress(Exception):
+                load_dotenv()
 
 
 # Load environment only when needed, not at module level
-def _get_mistral_model():
+def _get_mistral_model() -> "CustomMistralModel":
     """Get Mistral model with lazy initialization."""
     _load_environment_if_needed()
-    from testing_model.models import CustomMistralModel
+    # The testing_model classes are imported at module level when available.
+    if CustomMistralModel is None:
+        # testing_model package not available in this environment
+        raise RuntimeError() from None
 
-    mistral_api = os.getenv("MISTRAL_API")
+    mistral_api = os.getenv("MISTRAL_API", "")
     return CustomMistralModel(
         api_key=mistral_api, model="mistral-small-latest", temperature=0.7
     )
 
 
-def _get_local_model():
+def _get_local_model() -> "CustomLocalModel":
     """Get local model with lazy initialization."""
-    from testing_model.models import CustomLocalModel
+    # Use the top-level imported symbol; avoid local imports
+    if CustomLocalModel is None:
+        raise RuntimeError() from None
 
     return CustomLocalModel()
 
@@ -81,17 +101,16 @@ def set_local_model_via_cli(
     ]
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
-        print("Команда выполнена успешно:")
-        print(result.stdout)
+        logger.info("Command executed successfully:")
+        logger.info(result.stdout)
     except subprocess.CalledProcessError as e:
-        print("Ошибка выполнения команды:")
-        print(e.stderr)
-    except FileNotFoundError as e:
-        print(
-            "Команда не найдена. Убедитесь, "
-            "что Python и deepeval установлены и доступны в PATH."
+        logger.exception("Command execution error:")
+        logger.exception(e.stderr)
+    except FileNotFoundError:
+        logger.exception(
+            "Command not found. Make sure "
+            "Python and deepeval are installed and available in PATH."
         )
-        print(e)
 
 
 def test_mention_number_of_values(user_input: str, output: str) -> bool:
@@ -140,7 +159,7 @@ def test_mention_number_of_values(user_input: str, output: str) -> bool:
 
 
 def test_from_dataset(
-    test_dataset: str = "data/test_ru.json", test_file: str = "test.json"
+    test_dataset: str | Path = "data/test_ru.json", test_file: str | Path = "test.json"
 ) -> None:
     """
     Test the model using a dataset of prompts.
@@ -156,10 +175,10 @@ def test_from_dataset(
         - Final test metrics
     """
     llm_url = "http://localhost:1234/v1/chat/completions"
-    with open(test_dataset, "r", encoding="utf-8") as file:
+    with Path(test_dataset).open(encoding="utf-8") as file:
         test_dataset = json.load(file)
     # dataset_to_json_for_test(test_dataset, test_file)
-    with open(test_file, "r", encoding="utf-8") as f:
+    with Path(test_file).open(encoding="utf-8") as f:
         prompts = json.load(f)
     prompts_to_check = [prompt["user"] for prompt in prompts]
     # answers = [
@@ -173,7 +192,7 @@ def test_from_dataset(
             "messages": [{"role": "user", "content": user_input}],
             "model": "game-model/v4/model-game_v4.1_q4.gguf",
         }
-        response = requests.post(llm_url, json=data)
+        response = requests.post(llm_url, json=data, timeout=30)
         model_answer = json.loads(response.json()["choices"][0]["message"]["content"])[
             "MessageText"
         ]
@@ -181,11 +200,11 @@ def test_from_dataset(
             test_mention_number_of_values(user_input, model_answer)
             passed_tests += 1
         except AssertionError:
-            logging.error(
-                f"Тест не пройден для запроса: {user_input}. \nОтвет модели {model_answer}."
+            logger.exception(
+                "Test failed for request: %s. \nModel response %s.", user_input, model_answer
             )
 
     final_metric = passed_tests / total_tests if total_tests > 0 else 0
-    logging.info(
-        f"Итоговая метрика: {final_metric:.2f} ({passed_tests}/{total_tests} тестов пройдено)"
+    logger.info(
+        "Final metric: %.2f (%s/%s tests passed)", final_metric, passed_tests, total_tests
     )

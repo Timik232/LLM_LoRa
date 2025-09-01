@@ -9,8 +9,12 @@ import json
 import os
 import subprocess
 import tempfile
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Generator
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 import pytest
 from omegaconf import OmegaConf
@@ -52,9 +56,7 @@ def tokenizer() -> AutoTokenizer:
             tok.pad_token_id = tok.convert_tokens_to_ids(pad)
 
     def apply_chat_template(messages, tokenize: bool = False):
-        parts = []
-        for m in messages:
-            parts.append(f"{m['role'].upper()}: {m['content']}")
+        parts = [f"{m['role'].upper()}: {m['content']}" for m in messages]
         return "\n".join(parts)
 
     tok.apply_chat_template = apply_chat_template  # type: ignore[attr-defined]
@@ -79,6 +81,7 @@ def test_config():
                 "output_test_file": "test.json",
             },
             "other": {"cutoff_len": 128},
+            "data_preparation": {"method": "default"},
             "model": {
                 "model_name": "gpt2",
                 "new_model": "new_model",
@@ -104,10 +107,10 @@ def sample_dataset(temp_dir: str) -> str:
         {"system": "Another system", "user": "Second query", "bot": "Another response"},
     ]
     dataset_struct = {"system": "System message", "examples": examples}
-    dataset_path = os.path.join(temp_dir, "dataset.json")
-    with open(dataset_path, "w", encoding="utf-8") as f:
+    dataset_path = Path(temp_dir) / "dataset.json"
+    with dataset_path.open("w", encoding="utf-8") as f:
         json.dump(dataset_struct, f)
-    return dataset_path
+    return str(dataset_path)
 
 
 def test_change_dir(temp_dir: str) -> None:
@@ -156,12 +159,10 @@ def test_data_preparation(test_config, tokenizer, sample_dataset, monkeypatch) -
     """data_preparation should load dataset dict
     and return train/val Dataset objects."""
     test_config.paths.data_dir = "."
-    test_config.paths.train_data = os.path.basename(sample_dataset)
+    test_config.paths.train_data = Path(sample_dataset).name
 
     # monkeypatch get_original_cwd used inside one_file_train
-    monkeypatch.setattr(
-        oft, "get_original_cwd", lambda: os.path.dirname(sample_dataset)
-    )
+    monkeypatch.setattr(oft, "get_original_cwd", lambda: str(Path(sample_dataset).parent))
 
     train_data, val_data = data_preparation(test_config, tokenizer)
 
@@ -174,18 +175,18 @@ def test_data_preparation(test_config, tokenizer, sample_dataset, monkeypatch) -
 def test_copy_data(temp_dir: str) -> None:
     """copy_data expects source file in os.getcwd(); create file there inside change_dir."""
     with change_dir(temp_dir):
-        test_file = os.path.join(temp_dir, "test.txt")
-        with open(test_file, "w", encoding="utf-8") as f:
+        test_file = Path(temp_dir) / "test.txt"
+        with test_file.open("w", encoding="utf-8") as f:
             f.write("test content")
 
-        dest_dir = os.path.join(temp_dir, "destination")
-        os.makedirs(dest_dir, exist_ok=True)
+        dest_dir = Path(temp_dir) / "destination"
+        dest_dir.mkdir(parents=True, exist_ok=True)
 
-        copy_data("test.txt", "subdir", dest_dir)
+        copy_data("test.txt", "subdir", str(dest_dir))
 
-    dest_path = os.path.join(dest_dir, "subdir", "test.txt")
-    assert os.path.exists(dest_path)
-    with open(dest_path, "r", encoding="utf-8") as f:
+    dest_path = dest_dir / "subdir" / "test.txt"
+    assert dest_path.exists()
+    with dest_path.open(encoding="utf-8") as f:
         assert f.read() == "test content"
 
 
@@ -207,15 +208,15 @@ def test_model_merge_for_converting(test_config, temp_dir: str, monkeypatch) -> 
 
     class FakePeft:
         @staticmethod
-        def from_pretrained(model, adapter_path):
+        def from_pretrained(_model, _adapter_path):
             calls["peft_from_pretrained"] = True
             return SimpleNamespace(
-                merge_and_unload=lambda: SimpleNamespace(save_pretrained=lambda p: None)
+                merge_and_unload=lambda: SimpleNamespace(save_pretrained=lambda _p: None)
             )
 
     class FakeAutoModelClass:
         @classmethod
-        def from_pretrained(cls, *args, **kwargs):
+        def from_pretrained(cls, *_args, **_kwargs):
             calls["auto_from_pretrained"] = True
             return FakeModel()
 
@@ -228,7 +229,7 @@ def test_model_merge_for_converting(test_config, temp_dir: str, monkeypatch) -> 
 
     class FakeAutoTokenizerClass:
         @classmethod
-        def from_pretrained(cls, *args, **kwargs):
+        def from_pretrained(cls, *_args, **_kwargs):
             calls["tokenizer_from_pretrained"] = True
             return FakeTokenizer()
 
@@ -236,7 +237,7 @@ def test_model_merge_for_converting(test_config, temp_dir: str, monkeypatch) -> 
     monkeypatch.setattr(oft, "AutoTokenizer", FakeAutoTokenizerClass)
     monkeypatch.setattr(oft, "PeftModel", FakePeft)
 
-    save_path = os.path.join(temp_dir, "merged_model")
+    save_path = str(Path(temp_dir) / "merged_model")
     model_merge_for_converting(test_config, 100, save_path)
 
     assert calls["auto_from_pretrained"]
@@ -247,12 +248,12 @@ def test_model_merge_for_converting(test_config, temp_dir: str, monkeypatch) -> 
 def test_convert_to_gguf(test_config, temp_dir: str, monkeypatch) -> None:
     """convert_to_gguf should call subprocess.run when conversion script exists."""
     test_config.paths.llama_cpp_dir = temp_dir
-    conv_script = os.path.join(temp_dir, "convert_hf_to_gguf.py")
-    with open(conv_script, "w", encoding="utf-8") as f:
+    conv_script = Path(temp_dir) / "convert_hf_to_gguf.py"
+    with conv_script.open("w", encoding="utf-8") as f:
         f.write("# dummy converter")
 
-    model_path = os.path.join(temp_dir, "model")
-    os.makedirs(model_path, exist_ok=True)
+    model_path = Path(temp_dir) / "model"
+    model_path.mkdir(parents=True, exist_ok=True)
 
     def fake_run(*args, **kwargs):
         return SimpleNamespace(returncode=0)
@@ -261,8 +262,8 @@ def test_convert_to_gguf(test_config, temp_dir: str, monkeypatch) -> None:
     monkeypatch.setattr(oft.subprocess, "run", fake_run)
 
     convert_to_gguf(
-        model_path=model_path,
-        outfile=os.path.join(temp_dir, "model.gguf"),
+        model_path=str(model_path),
+        outfile=str(Path(temp_dir) / "model.gguf"),
         python_exe="python",
         outtype="f16",
         cfg=test_config,
@@ -271,12 +272,12 @@ def test_convert_to_gguf(test_config, temp_dir: str, monkeypatch) -> None:
 
 def test_quantize_model_success(temp_dir: str, monkeypatch) -> None:
     """quantize_model returns True when quantizer exists and subprocess.run succeeds."""
-    model_path = os.path.join(temp_dir, "model.gguf")
-    with open(model_path, "w", encoding="utf-8") as f:
+    model_path = Path(temp_dir) / "model.gguf"
+    with model_path.open("w", encoding="utf-8") as f:
         f.write("GGUF mock data")
 
-    quantizer_path = os.path.join(temp_dir, "llama-quantize")
-    with open(quantizer_path, "w", encoding="utf-8") as f:
+    quantizer_path = Path(temp_dir) / "llama-quantize"
+    with quantizer_path.open("w", encoding="utf-8") as f:
         f.write("")
 
     def fake_run(*args, **kwargs):
@@ -285,8 +286,8 @@ def test_quantize_model_success(temp_dir: str, monkeypatch) -> None:
     monkeypatch.setattr(oft.subprocess, "run", fake_run)
 
     result = quantize_model(
-        model_path=model_path,
-        outfile=os.path.join(temp_dir, "quantized.gguf"),
+        model_path=str(model_path),
+        outfile=str(Path(temp_dir) / "quantized.gguf"),
         qtype="q4_0",
         llama_cpp_path=temp_dir,
         quantized_path="llama-quantize",
@@ -297,8 +298,8 @@ def test_quantize_model_success(temp_dir: str, monkeypatch) -> None:
 
 def test_quantize_model_failure(temp_dir: str, monkeypatch) -> None:
     """quantize_model should return False when subprocess.run raises CalledProcessError."""
-    quantizer_path = os.path.join(temp_dir, "llama-quantize")
-    with open(quantizer_path, "w", encoding="utf-8") as f:
+    quantizer_path = Path(temp_dir) / "llama-quantize"
+    with quantizer_path.open("w", encoding="utf-8") as f:
         f.write("")
 
     def fake_run_raises(*args, **kwargs):
@@ -310,8 +311,8 @@ def test_quantize_model_failure(temp_dir: str, monkeypatch) -> None:
     monkeypatch.setattr(oft.subprocess, "run", fake_run_raises)
 
     result = quantize_model(
-        model_path=os.path.join(temp_dir, "nonexistent.gguf"),
-        outfile=os.path.join(temp_dir, "quantized.gguf"),
+        model_path=str(Path(temp_dir) / "nonexistent.gguf"),
+        outfile=str(Path(temp_dir) / "quantized.gguf"),
         qtype="q4_0",
         llama_cpp_path=temp_dir,
         quantized_path="llama-quantize",

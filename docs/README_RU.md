@@ -3,7 +3,7 @@
 **Эффективное по памяти дообучение больших языковых моделей с использованием LoRa и продвинутого квантования**
 
 [![Лицензия: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-red.svg)](https://pytorch.org/)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](../docker-compose.yaml)
 
@@ -32,7 +32,7 @@
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/your-username/LLM_LoRa.git
+git clone https://github.com/timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # Настройте параметры обучения
@@ -106,13 +106,45 @@ python main.py \
 
 ### Вариант 1: Docker (Рекомендуется)
 
-Если контейнер не запускается, то вам потребуется скачать [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/). Он необходим для работы Docker с видеокартой.
+**Предварительные требования:**
+- GPU NVIDIA с поддержкой CUDA
+- Docker и Docker Compose установлены
+- NVIDIA Container Toolkit
 
 ```bash
-# Соберите и запустите
+# 1. Установка NVIDIA Container Toolkit (если не установлен)
+# Ubuntu/Debian:
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+
+# 2. Проверьте доступ к GPU в Docker
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
+
+# 3. Клонируйте репозиторий
+git clone https://github.com/timik232/LLM_LoRa.git
+cd LLM_LoRa
+
+# 4. Настройте обучение (опционально)
+cp conf/config.yaml my_config.yaml
+# Отредактируйте my_config.yaml со своими настройками
+
+# 5. Соберите и запустите обучение
 docker-compose build
-docker-compose up
+docker-compose up llm_training
+
+# 6. Запуск сервинга модели (после обучения)
+docker-compose up ollama
 ```
+
+**Docker Сервисы:**
+- `llm_training`: Контейнер обучения с поддержкой GPU
+- `ollama`: Контейнер сервинга модели (порт 11434)
+- `mlflow`: UI отслеживания экспериментов (порт 5000)
 
 ### Вариант 2: Локальная установка
 
@@ -120,7 +152,7 @@ docker-compose up
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/your-username/LLM_LoRa.git
+git clone https://github.com/timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # Установите Poetry (если не установлен)
@@ -196,6 +228,45 @@ python main.py \
   logging.use_mlflow=true
 ```
 
+### Конвертация RKLLM (Развертывание на устройствах)
+
+Конвертируйте обученные модели в формат RKLLM для развертывания на аппаратуре Rockchip NPU:
+
+```bash
+# Включите конвертацию RKLLM во время обучения
+python main.py \
+  model.rkllm.enabled=true \
+  model.rkllm.target_platform=rk3588 \
+  model.rkllm.quantization=w8a8
+
+# Доступные целевые платформы
+model.rkllm.target_platform=rk3588    # RK3588 (рекомендуется)
+model.rkllm.target_platform=rk3576    # RK3576
+
+# Варианты квантования
+model.rkllm.quantization=w8a8         # 8-битные веса, 8-битная активация (рекомендуется)
+model.rkllm.quantization=w4a16        # 4-битные веса, 16-битная активация
+model.rkllm.quantization=w4a16_g128   # 4-битные веса с группировкой
+
+# Продвинутые настройки RKLLM
+python main.py \
+  model.rkllm.enabled=true \
+  model.rkllm.target_platform=rk3588 \
+  model.rkllm.quantization=w8a8 \
+  model.rkllm.do_parallelize=true \
+  model.rkllm.hybrid_quantization=true \
+  model.rkllm.num_npu_core=3
+```
+
+**Местоположение вывода RKLLM**: `models/rkllm_models/`
+
+**Поддерживаемые возможности**:
+- Несколько платформ Rockchip (RK3588, RK3576)
+- Различные стратегии квантования для оптимальных соотношений производительность/размер
+- Распараллеливание модели для больших моделей
+- Гибридное квантование для улучшенной точности
+- Использование нескольких ядер NPU (1-3 ядра)
+
 ### Сервинг модели
 
 ```bash
@@ -212,20 +283,38 @@ curl -X POST http://localhost:11434/api/generate \
 ```
 ├── main.py                     # Основная точка входа
 ├── conf/                       # Файлы конфигурации
-│   ├── config.yaml            # Главная конфигурация
-│   ├── model/                 # Конфигурации моделей
-│   └── training/              # Конфигурации обучения
+│   └── config.yaml            # Главная конфигурация Hydra
 ├── training_model/            # Логика обучения
-│   ├── one_file_train.py     # Основное обучение
-│   ├── grpo_train.py         # Реализация GRPO
-│   └── data_preparation.py   # Предобработка данных
-├── testing_model/            # Логика оценки
-│   ├── test.py              # Реализации тестов
-│   └── deepeval_func.py     # Интеграция DeepEval
-├── data/                     # Наборы данных для обучения
-├── models/                   # Выходные модели
-├── docs/                     # Документация
-└── docker-compose.yaml      # Конфигурация Docker
+│   ├── __main__.py            # Точка входа обучения
+│   ├── one_file_train.py      # Основная реализация обучения
+│   ├── grpo_train.py          # Метод обучения GRPO
+│   ├── dpo_train.py           # Метод обучения DPO
+│   ├── data_preparation.py    # Предобработка данных
+│   ├── auth_utils.py          # Утилиты аутентификации
+│   ├── logging_utils.py       # Конфигурация логирования
+│   ├── optuna.py              # Оптимизация гиперпараметров
+│   ├── exceptions.py          # Пользовательские исключения
+│   └── types.py               # Определения типов
+├── testing_model/             # Оценка модели
+│   ├── __main__.py            # Точка входа тестирования
+│   └── models.py              # Пользовательские реализации моделей
+├── evaluation/                # Фреймворки оценки
+│   ├── deepeval_integration.py # Интеграция фреймворка DeepEval
+│   ├── model_evaluation.py     # Основные функции оценки
+│   └── game_evaluation.py      # Оценка для игр
+├── tests/                     # Набор тестов
+│   ├── unit/                  # Модульные тесты
+│   ├── integration/           # Интеграционные тесты
+│   └── test_requirements.txt  # Зависимости тестов
+├── data/                      # Наборы данных для обучения (отслеживается DVC)
+├── models/                    # Выходные модели и чекпоинты
+├── docs/                      # Документация
+├── llama.cpp/                 # Интеграция llama.cpp (локальная)
+├── pyproject.toml             # Зависимости Poetry
+├── docker-compose.yaml        # Docker сервисы
+├── Dockerfile                 # Основной контейнер обучения
+├── run_pipeline.sh            # Скрипт pipeline обучения
+└── CLAUDE.md                  # Инструкции проекта
 ```
 
 ## 📊 Производительность
@@ -260,19 +349,119 @@ curl -X POST http://localhost:11434/api/generate \
 **CUDA Out of Memory**
 ```bash
 # Уменьшите размер батча или включите накопление градиентов
-python main.py training.batch_size=2 training.gradient_accumulation_steps=8
+python main.py training.per_device_train_batch_size=1 training.gradient_accumulation_steps=8
+
+# Включите градиентные чекпоинты для дополнительной экономии памяти
+python main.py training.gradient_checkpointing=true
 ```
 
 **Проблемы с Docker GPU**
 ```bash
-# Проверьте NVIDIA container toolkit
+# 1. Проверьте установку драйвера NVIDIA
+nvidia-smi
+
+# 2. Проверьте NVIDIA Container Toolkit
 nvidia-container-cli info
+
+# 3. Проверьте доступ к GPU в Docker
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
+
+# 4. Если GPU недоступна, перезапустите демон Docker
+sudo systemctl restart docker
+
+# 5. Проверьте конфигурацию GPU в Docker Compose
+docker-compose config
 ```
 
-**Ошибки загрузки модели**
-- Убедитесь в достаточном дисковом пространстве (70GB+ для полной установки)
-- Проверьте токен HuggingFace для приватных моделей
-- Проверьте совместимость с CUDA
+**Проблемы со сборкой Docker**
+```bash
+# Очистите кэш Docker и пересоберите
+docker system prune -a
+docker-compose build --no-cache
+
+# Проверьте свободное место на диске (требуется 70GB+)
+df -h
+
+# Отслеживайте прогресс сборки с подробным выводом
+docker-compose build --progress=plain
+```
+
+**Проблемы с интеграцией llama.cpp**
+```bash
+# Проверьте символические ссылки llama.cpp в контейнере
+docker-compose exec llm_training ls -la /app/llama.cpp
+docker-compose exec llm_training ls -la /app/llama.cpp/llama-quantize.exe
+
+# Проверьте исполняемый файл квантования
+docker-compose exec llm_training file /llama.cpp/build/bin/llama-quantize
+```
+
+**Ошибки загрузки/конвертации модели**
+```bash
+# Проверьте доступное дисковое пространство для загрузки и конвертации моделей
+du -sh models/
+df -h .
+
+# Проверьте аутентификацию HuggingFace (для приватных моделей)
+docker-compose exec llm_training python -c "from huggingface_hub import whoami; print(whoami())"
+
+# Проверьте логи конвертации GGUF
+docker-compose logs llm_training | grep -i gguf
+
+# Проверьте конвертацию RKLLM (если включена)
+docker-compose logs llm_training | grep -i rkllm
+```
+
+**Проблемы с конфигурацией**
+```bash
+# Проверьте конфигурацию Hydra
+python main.py --config-path=conf --config-name=config --help
+
+# Проверьте синтаксис переопределения конфигурации
+python main.py model.train_steps=10 --dry-run
+
+# Отладка загрузки данных
+python main.py training.logging_steps=1 training.eval_steps=5
+```
+
+**Проблемы с сервисами контейнера**
+```bash
+# Проверьте статус всех сервисов
+docker-compose ps
+
+# Посмотрите логи конкретного сервиса
+docker-compose logs llm_training
+docker-compose logs ollama
+docker-compose logs mlflow
+
+# Перезапустите конкретный сервис
+docker-compose restart llm_training
+
+# Доступ к shell контейнера для отладки
+docker-compose exec llm_training bash
+```
+
+**Проблемы с производительностью**
+```bash
+# Отслеживайте использование GPU во время обучения
+nvidia-smi -l 1
+
+# Проверьте использование ресурсов контейнера
+docker stats
+
+# Оптимизируйте под доступную память GPU
+python main.py training.per_device_train_batch_size=1 training.gradient_accumulation_steps=16 training.fp16=true
+```
+
+### Получение помощи
+
+1. **Сначала проверьте логи**: `docker-compose logs llm_training`
+2. **Проверьте системные требования**: GPU NVIDIA, 70GB+ дискового пространства, CUDA toolkit
+3. **Обновите драйверы**: Убедитесь, что установлены последние драйверы NVIDIA
+4. **GitHub Issues**: Сообщайте о багах в [GitHub Issues](https://github.com/timik232/LLM_LoRa/issues)
+5. **Включите диагностику**: информация о GPU (`nvidia-smi`), версия Docker, логи ошибок
+
+Больше проблем можно найти на странице [Issues](https://github.com/timik232/LLM_LoRa/issues).
 
 ## 📄 Лицензия
 
@@ -290,4 +479,4 @@ nvidia-container-cli info
 
 **Поставьте звезду ⭐ этому репозиторию, если он вам помог!**
 
-[Сообщить об ошибке](https://github.com/your-username/LLM_LoRa/issues) • [Запросить функцию](https://github.com/your-username/LLM_LoRa/issues) • [Обсуждения](https://github.com/your-username/LLM_LoRa/discussions)
+[Сообщить об ошибке](https://github.com/timik232/LLM_LoRa/issues) • [Запросить функцию](https://github.com/timik232/LLM_LoRa/issues) • [Обсуждения](https://github.com/timik232/LLM_LoRa/discussions)

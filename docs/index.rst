@@ -38,13 +38,13 @@ LLM-LoRA is a comprehensive framework for fine-tuning Large Language Models usin
 3. **Using Fire CLI**::
 
     python main.py --help
-    python main.py train_model
-    python main.py evaluate_model
+    python main.py train
+    python main.py test
 
 4. **Model Conversion**::
 
-    python main.py convert_to_gguf
-    python main.py convert_to_rkllm
+    python main.py convert --gguf=True
+    python main.py convert --rkllm=True
 
 🏗️ **Architecture Overview**
 =============================

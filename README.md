@@ -5,7 +5,7 @@
 **Memory-efficient LLM fine-tuning with LoRa and advanced quantization**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11-3.13](https://img.shields.io/badge/python-3.11--3.13-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-red.svg)](https://pytorch.org/)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](docker-compose.yaml)
 [![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.53.0+-yellow.svg)](https://huggingface.co/transformers/)
@@ -43,6 +43,7 @@ cp conf/config.yaml my_config.yaml
 # Edit my_config.yaml with your settings
 
 # Start training
+docker-compose build
 docker-compose up
 ```
 
@@ -120,18 +121,49 @@ python main.py \
 - **GPU**: NVIDIA GPU with CUDA support
 - **Memory**: Minimum 8GB GPU memory (varies by model size)
 - **Storage**: 70GB+ for full Docker setup
-- **Python**: 3.11 to 3.13
+- **Python**: 3.11 to 3.13 (exact requirement: >=3.11, <=3.13)
 
 ### Option 1: Docker (Recommended)
 
-```bash
-# Install NVIDIA Container Toolkit (if not already installed)
-# See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/
+**Prerequisites:**
+- NVIDIA GPU with CUDA support
+- Docker and Docker Compose installed
+- NVIDIA Container Toolkit
 
-# Build and run
+```bash
+# 1. Install NVIDIA Container Toolkit (if not already installed)
+# Ubuntu/Debian:
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo systemctl restart docker
+
+# 2. Verify GPU access in Docker
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
+
+# 3. Clone repository
+git clone https://github.com/timik232/LLM_LoRa.git
+cd LLM_LoRa
+
+# 4. Configure training (optional)
+cp conf/config.yaml my_config.yaml
+# Edit my_config.yaml with your settings
+
+# 5. Build and run training
 docker-compose build
-docker-compose up
+docker-compose up llm_training
+
+# 6. Start model serving (after training)
+docker-compose up ollama
 ```
+
+**Docker Services:**
+- `llm_training`: Main training container with GPU support
+- `ollama`: Model serving container (port 11434)
+- `mlflow`: Experiment tracking UI (port 5000)
 
 ### Option 2: Local Installation
 
@@ -162,6 +194,34 @@ pip install -r requirements.txt
 The project uses Hydra for configuration management. Key configuration file:
 
 - `conf/config.yaml`: Main configuration
+
+### Environment Configuration
+
+The framework now supports automatic environment-specific configuration using Hydra Config Groups, eliminating the need to manually edit configuration files:
+
+**🐳 Docker/Production (Default)**
+```bash
+# Uses system python in containers
+python main.py
+# or explicitly:
+python main.py environment=docker
+```
+
+**💻 Local Development**
+```bash
+# Uses local virtual environment python
+python main.py environment=local
+```
+
+**Configuration Files:**
+- `conf/environment/docker.yaml` - Docker/production settings
+- `conf/environment/local.yaml` - Local Windows development settings
+
+**Benefits:**
+- ✅ No manual commenting/uncommenting of configuration lines
+- ✅ Automatic python path resolution for different environments
+- ✅ Clean separation of environment-specific settings
+- ✅ Easy switching between local and Docker environments
 
 ### Example Configuration
 
@@ -194,14 +254,17 @@ paths:
 ### Basic Training
 
 ```bash
-# Train with default settings
+# Train with default settings (Docker/production)
 python main.py
+
+# Train with local development environment
+python main.py environment=local
 
 # Train specific model
 python main.py model.model_name=microsoft/DialoGPT-large
 
-# Enable GRPO training
-python main.py training.use_grpo=true
+# Enable GRPO training with local environment
+python main.py environment=local training.use_grpo=true
 ```
 
 ### Advanced Training
@@ -216,6 +279,45 @@ python main.py \
   model.lora.r=32 \
   logging.use_mlflow=true
 ```
+
+### RKLLM Conversion (Edge Deployment)
+
+Convert trained models to RKLLM format for deployment on Rockchip NPU hardware:
+
+```bash
+# Enable RKLLM conversion during training
+python main.py \
+  model.rkllm.enabled=true \
+  model.rkllm.target_platform=rk3588 \
+  model.rkllm.quantization=w8a8
+
+# Available target platforms
+model.rkllm.target_platform=rk3588    # RK3588 (recommended)
+model.rkllm.target_platform=rk3576    # RK3576
+
+# Quantization options
+model.rkllm.quantization=w8a8         # 8-bit weights, 8-bit activations (recommended)
+model.rkllm.quantization=w4a16        # 4-bit weights, 16-bit activations
+model.rkllm.quantization=w4a16_g128   # 4-bit weights with grouping
+
+# Advanced RKLLM options
+python main.py \
+  model.rkllm.enabled=true \
+  model.rkllm.target_platform=rk3588 \
+  model.rkllm.quantization=w8a8 \
+  model.rkllm.do_parallelize=true \
+  model.rkllm.hybrid_quantization=true \
+  model.rkllm.num_npu_core=3
+```
+
+**RKLLM Output Location**: `models/rkllm_models/`
+
+**Supported Features**:
+- Multiple Rockchip platforms (RK3588, RK3576)
+- Various quantization strategies for optimal performance/size tradeoffs
+- Model parallelization for larger models
+- Hybrid quantization for improved accuracy
+- Multi-NPU core utilization (1-3 cores)
 
 ### Model Serving
 
@@ -243,18 +345,38 @@ python -m testing_model --config-name=eval_config
 ```
 ├── main.py                     # Main entry point
 ├── conf/                       # Configuration files
-│   ├── config.yaml            # Main config
+│   └── config.yaml            # Main Hydra configuration
 ├── training_model/            # Training logic
-│   ├── one_file_train.py     # Core training
-│   ├── grpo_train.py         # GRPO implementation
-│   └── data_preparation.py   # Data preprocessing
-├── testing_model/            # Evaluation logic
-│   ├── test.py              # Test implementations
-│   └── deepeval_func.py     # DeepEval integration
-├── data/                     # Training datasets
-├── models/                   # Output models
-├── docs/                     # Documentation
-└── docker-compose.yaml      # Docker configuration
+│   ├── __main__.py            # Training entry point
+│   ├── one_file_train.py      # Core training implementation
+│   ├── grpo_train.py          # GRPO training method
+│   ├── dpo_train.py           # DPO training method
+│   ├── data_preparation.py    # Data preprocessing
+│   ├── auth_utils.py          # Authentication utilities
+│   ├── logging_utils.py       # Logging configuration
+│   ├── optuna.py              # Hyperparameter optimization
+│   ├── exceptions.py          # Custom exceptions
+│   └── types.py               # Type definitions
+├── testing_model/             # Model evaluation
+│   ├── __main__.py            # Testing entry point
+│   └── models.py              # Custom model implementations
+├── evaluation/                # Evaluation frameworks
+│   ├── deepeval_integration.py # DeepEval framework
+│   ├── model_evaluation.py    # Core evaluation functions
+│   └── game_evaluation.py     # Game-specific evaluation
+├── tests/                     # Test suite
+│   ├── unit/                  # Unit tests
+│   ├── integration/           # Integration tests
+│   └── test_requirements.txt  # Test dependencies
+├── data/                      # Training datasets (DVC tracked)
+├── models/                    # Output models and checkpoints
+├── docs/                      # Documentation
+├── llama.cpp/                 # llama.cpp integration (local)
+├── pyproject.toml             # Poetry dependencies
+├── docker-compose.yaml        # Docker services
+├── Dockerfile                 # Main training container
+├── run_pipeline.sh            # Training pipeline script
+└── CLAUDE.md                  # Project instructions
 ```
 
 ## 📊 Performance
@@ -299,19 +421,117 @@ pytest tests/
 **CUDA Out of Memory**
 ```bash
 # Reduce batch size or enable gradient accumulation
-python main.py training.batch_size=2 training.gradient_accumulation_steps=8
+python main.py training.per_device_train_batch_size=1 training.gradient_accumulation_steps=8
+
+# Enable gradient checkpointing for additional memory savings
+python main.py training.gradient_checkpointing=true
 ```
 
 **Docker GPU Issues**
 ```bash
-# Verify NVIDIA container toolkit
+# 1. Verify NVIDIA driver installation
+nvidia-smi
+
+# 2. Check NVIDIA Container Toolkit
 nvidia-container-cli info
+
+# 3. Test GPU access in Docker
+docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
+
+# 4. If GPU not accessible, restart Docker daemon
+sudo systemctl restart docker
+
+# 5. Check Docker Compose GPU configuration
+docker-compose config
 ```
 
-**Model Loading Errors**
-- Ensure sufficient disk space (70GB+ for full setup)
-- Check HuggingFace token for private models
-- Verify CUDA compatibility
+**Docker Build Issues**
+```bash
+# Clear Docker cache and rebuild
+docker system prune -a
+docker-compose build --no-cache
+
+# Check disk space (requires 70GB+)
+df -h
+
+# Monitor build progress with verbose output
+docker-compose build --progress=plain
+```
+
+**llama.cpp Integration Issues**
+```bash
+# Verify llama.cpp symlinks in container
+docker-compose exec llm_training ls -la /app/llama.cpp
+docker-compose exec llm_training ls -la /app/llama.cpp/llama-quantize.exe
+
+# Check quantization executable
+docker-compose exec llm_training file /llama.cpp/build/bin/llama-quantize
+```
+
+**Model Loading/Conversion Errors**
+```bash
+# Check available disk space for model downloads and conversion
+du -sh models/
+df -h .
+
+# Verify HuggingFace authentication (for private models)
+docker-compose exec llm_training python -c "from huggingface_hub import whoami; print(whoami())"
+
+# Check GGUF conversion logs
+docker-compose logs llm_training | grep -i gguf
+
+# Verify RKLLM conversion (if enabled)
+docker-compose logs llm_training | grep -i rkllm
+```
+
+**Configuration Issues**
+```bash
+# Validate Hydra configuration
+python main.py --config-path=conf --config-name=config --help
+
+# Check configuration override syntax
+python main.py model.train_steps=10 --dry-run
+
+# Debug data loading
+python main.py training.logging_steps=1 training.eval_steps=5
+```
+
+**Container Service Issues**
+```bash
+# Check all services status
+docker-compose ps
+
+# View specific service logs
+docker-compose logs llm_training
+docker-compose logs ollama
+docker-compose logs mlflow
+
+# Restart specific service
+docker-compose restart llm_training
+
+# Access container shell for debugging
+docker-compose exec llm_training bash
+```
+
+**Performance Issues**
+```bash
+# Monitor GPU utilization during training
+nvidia-smi -l 1
+
+# Check container resource usage
+docker stats
+
+# Optimize for available GPU memory
+python main.py training.per_device_train_batch_size=1 training.gradient_accumulation_steps=16 training.fp16=true
+```
+
+### Getting Help
+
+1. **Check logs first**: `docker-compose logs llm_training`
+2. **Verify system requirements**: NVIDIA GPU, 70GB+ disk space, CUDA toolkit
+3. **Update drivers**: Ensure latest NVIDIA drivers are installed
+4. **GitHub Issues**: Report bugs at [GitHub Issues](https://github.com/timik232/LLM_LoRa/issues)
+5. **Include diagnostics**: GPU info (`nvidia-smi`), Docker version, error logs
 
 For more issues, check our [Issues](https://github.com/timik232/LLM_LoRa/issues) page.
 

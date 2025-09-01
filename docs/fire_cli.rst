@@ -61,7 +61,7 @@ Evaluate a trained model using specified metrics and test datasets.
     python main.py evaluate_model --model_path=models/trained_model --test_data=data/test.json
 
     # Evaluation with custom metrics
-    python main.py evaluate_model --model_path=models/trained_model --metrics=["bleu","rouge","perplexity"]
+    python main.py evaluate_model --model_path=models/trained_model --metrics=["bleu","rogue","perplexity"]
 
 **Parameters:**
 
@@ -73,50 +73,29 @@ Evaluate a trained model using specified metrics and test datasets.
 Model Conversion Commands
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
-convert_to_gguf
-^^^^^^^^^^^^^^^
+convert
+^^^^^^^
 
-Convert trained model to GGUF format for llama.cpp inference.
+Convert trained model to GGUF and/or RKLLM format.
 
 .. code-block:: bash
 
     # Basic GGUF conversion
-    python main.py convert_to_gguf --model_path=models/trained_model
+    python main.py convert --gguf=True
 
-    # Conversion with quantization
-    python main.py convert_to_gguf --model_path=models/trained_model --quantize=true --qtype=q4_1
+    # RKLLM conversion for Rockchip NPU
+    python main.py convert --rkllm=True --target_platform=rk3588
 
-    # Custom output path
-    python main.py convert_to_gguf --model_path=models/trained_model --output_path=models/gguf/
-
-**Parameters:**
-
-* ``model_path`` (required): Path to the PyTorch model
-* ``output_path`` (optional): Output directory for GGUF files
-* ``quantize`` (optional): Apply quantization during conversion
-* ``qtype`` (optional): Quantization type (q4_0, q4_1, q8_0, etc.)
-
-convert_to_rkllm
-^^^^^^^^^^^^^^^^
-
-Convert model to RKLLM format for Rockchip NPU deployment.
-
-.. code-block:: bash
-
-    # Basic RKLLM conversion
-    python main.py convert_to_rkllm --model_path=models/trained_model
-
-    # Conversion for specific platform
-    python main.py convert_to_rkllm --model_path=models/trained_model --platform=rk3588
-
-    # With optimization settings
-    python main.py convert_to_rkllm --model_path=models/trained_model --optimize=true --precision=int8
+    # Both conversions
+    python main.py convert --gguf=True --rkllm=True
 
 **Parameters:**
 
-* ``model_path`` (required): Path to the model to convert
-* ``platform`` (optional): Target Rockchip platform (rk3588, rk3576)
-* ``optimize`` (optional): Enable optimization for NPU
+* ``gguf`` (optional): Enable GGUF conversion (default: True)
+* ``rkllm`` (optional): Enable RKLLM conversion (default: False)
+* ``target_platform`` (optional): RKLLM target platform (rk3588, rk3576)
+* ``quantization`` (optional): RKLLM quantization type (w8a8, w4a16, w4a16_g128)
+
 * ``precision`` (optional): Inference precision (int8, int16, float16)
 
 Utility Commands
@@ -215,7 +194,7 @@ Process multiple models or configurations:
     python main.py train_model --config-name=config1,config2,config3
 
     # Convert multiple models
-    python main.py convert_to_gguf --model_path=models/model1,models/model2
+    python main.py convert --gguf=True
 
     # Evaluate multiple models
     python main.py evaluate_model --model_path=models/* --output_file=evaluation_results.json
@@ -231,9 +210,9 @@ Chain multiple operations together:
 .. code-block:: bash
 
     # Train, evaluate, and convert in sequence
-    python main.py train_model && \\
-    python main.py evaluate_model --model_path=models/latest && \\
-    python main.py convert_to_gguf --model_path=models/latest
+    python main.py train && \\
+    python main.py test && \\
+    python main.py convert --gguf=True
 
 Custom Scripts Integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -283,10 +262,10 @@ Development Workflow
     python main.py train_model --config-name=dev_config
 
     # 2. Evaluate the model
-    python main.py evaluate_model --model_path=models/latest
+    python main.py test
 
     # 3. Convert for deployment
-    python main.py convert_to_gguf --model_path=models/latest --quantize=true
+    python main.py convert --gguf=True
 
 Production Deployment
 ~~~~~~~~~~~~~~~~~~~~
@@ -294,14 +273,13 @@ Production Deployment
 .. code-block:: bash
 
     # 1. Train with production settings
-    python main.py train_model --config-name=production
+    python main.py train
 
     # 2. Thorough evaluation
-    python main.py evaluate_model --model_path=models/production --metrics=all
+    python main.py test
 
     # 3. Multi-format conversion
-    python main.py convert_to_gguf --model_path=models/production
-    python main.py convert_to_rkllm --model_path=models/production
+    python main.py convert --gguf=True --rkllm=True
 
 Experimentation
 ~~~~~~~~~~~~~~~

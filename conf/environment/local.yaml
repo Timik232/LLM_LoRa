@@ -1,0 +1,5 @@
+# @package paths
+# Local Windows development environment configuration
+# Only contains environment-specific path overrides
+
+venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"  # Local Windows virtual environment

@@ -12,7 +12,7 @@ The evaluation framework offers:
 * **Game-specific Evaluation**: Specialized metrics for conversational AI and game-based interactions
 * **Model Performance Assessment**: Comprehensive evaluation of fine-tuned models across multiple dimensions
 * **Pytest Integration**: Structured testing framework with unit and integration test separation
-* **Evaluation Metrics**: Support for BLEU, ROUGE, perplexity, and custom domain-specific metrics
+* **Evaluation Metrics**: Support for BLEU, ROGUE, perplexity, and custom domain-specific metrics
 * **Automated Testing**: Continuous evaluation pipeline for model quality assurance
 
 Evaluation Workflow
@@ -93,7 +93,7 @@ Standard Metrics
 ~~~~~~~~~~~~~~~~
 
 * **BLEU Score**: Bilingual evaluation for text similarity
-* **ROUGE Score**: Recall-oriented evaluation for summarization
+* **ROGUE Score**: Recall-oriented evaluation for summarization
 * **Perplexity**: Language model uncertainty measurement
 * **Token Accuracy**: Exact token matching evaluation
 
@@ -112,7 +112,7 @@ Basic Model Evaluation
     results = evaluate_model(
         model_path="models/fine_tuned_model",
         test_dataset="data/test_set.json",
-        metrics=["bleu", "rouge", "perplexity"]
+        metrics=["bleu", "rogue", "perplexity"]
     )
 
     # Use custom models for evaluation

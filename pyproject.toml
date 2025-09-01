@@ -44,7 +44,9 @@ types-requests = "^2.32.0.20250306"
 types-pyyaml = "^6.0.12.20250326"
 uv = "^0.7.16"
 sphinx-rtd-theme = "^3.0.2"
-
+ruff = "^0.8.4"
+bandit = "^1.7.10"
+codespell = "^2.3.0"
 
 [[tool.poetry.source]]
 name = "torch-cuda"
@@ -74,9 +76,63 @@ filterwarnings = [
 ]
 
 [tool.ruff]
-select = ["E", "F", "W", "B", "N", "C90"]
-ignore = ["E203", "W605"]
 line-length = 95
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E","F","W","B","N","ANN","S","I","UP","RET","SIM","LOG","PLC","PLR","TRY","RUF","PERF","COM","PD"]
+ignore = ["E203", "W605", "PLR0913", "PLR0915", "COM812", "PLR2004", "TRY003"]
+
+# NOTE: TRY003 is ignored project-wide above to reduce noisy long-message warnings
+# Candidate additional rules that are often strict in large legacy codebases and
+# could be ignored on a per-team decision: ANN401 (dynamic typing), PLR* (too many
+# parameters/complex functions), PLC0415 (lazy imports), S105 (hardcoded creds).
+# If you want me to add any of these to the ignore list globally, tell me which
+# ones and I'll apply the change.
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "ANN", "PLR2004"]
+"docs/*" = ["ANN"]
+"dev.py" = ["S603", "S607", "LOG015"]
+"vk_bot/*" = ["RUF001", "RUF002", "N999", "ANN001", "ANN201", "ANN401"]
+"training_model/one_file_train.py" = ["S603"]
+"training_model/*" = ["TRY", "PLR", "ANN", "RUF", "RET", "PERF", "PLC", "LOG", "S105", "SIM108"]
+"evaluation/*" = ["RUF001", "RUF002", "S603"]
+"legacy/*" = ["ALL"]
+"training_model/types.py" = ["UP007", "ANN401", "PYI036"]
+
+[tool.black]
+line-length = 95
+target-version = ["py311", "py312", "py313"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+
+[tool.bandit]
+exclude_dirs = ["tests", "docs"]
+skips = ["B101", "B601", "B404", "B105", "B603", "B607"]
+# Skip assert_used, shell_injection_process_start, subprocess import, hardcoded password, subprocess calls
+
+[tool.bandit.assert_used]
+exclude = ["*test*.py", "*conftest*.py"]
+
+[tool.codespell]
+skip = "*.git,*.svg,*.pdf,*.pyc,*/_build/*,*/venv/*,*/node_modules/*"
+ignore-words-list = "ist,alist,hass,tha,ente"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

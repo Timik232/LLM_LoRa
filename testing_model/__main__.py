@@ -1,13 +1,13 @@
 import json
 import logging
+from pathlib import Path
 
 import hydra
 import ollama
 from omegaconf import DictConfig
 
-from training_model import configure_logging
-
 from evaluation.model_evaluation import dataset_to_json_for_test, test_llm
+from training_model import configure_logging
 
 
 @hydra.main(version_base="1.1", config_path="../conf", config_name="config")
@@ -33,7 +33,7 @@ def test_main(cfg: DictConfig) -> None:
     """
     configure_logging(logging.DEBUG)
     if cfg.testing.test:
-        with open(cfg.testing.test_dataset, "r", encoding="utf-8") as file:
+        with Path(cfg.testing.test_dataset).open(encoding="utf-8") as file:
             test_dataset = json.load(file)
         dataset_to_json_for_test(test_dataset, cfg.testing.output_test_file)
         client = ollama.Client()

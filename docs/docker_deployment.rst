@@ -226,11 +226,7 @@ Convert trained models to Ollama-compatible format:
 .. code-block:: bash
 
     # Convert model to GGUF format (required for Ollama)
-    python main.py convert_to_gguf \\
-        --model_path=models/trained_model \\
-        --output_path=models/ollama/model.gguf \\
-        --quantize=true \\
-        --qtype=q4_1
+    python main.py convert --gguf=True
 
 Creating Ollama Model Files
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

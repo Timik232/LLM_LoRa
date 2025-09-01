@@ -32,17 +32,11 @@ def main():
             user_id = event.user_id
             if event.text:
                 if len(event.text) > 400:
-                    send_message(
-                        user_id, "Генерация может занимание много время, ожидание"
-                    )
+                    send_message(user_id, "Генерация может занимание много время, ожидание")
                 if len(users_generate) > 0 and user_id not in users_generate:
-                    send_message(
-                        user_id, "Генерация другой человек, ожидание больше обычного"
-                    )
+                    send_message(user_id, "Генерация другой человек, ожидание больше обычного")
                 if len(event.text) > 1200:
-                    send_message(
-                        user_id, "Текст слишком длинный, разрезание несколько частей"
-                    )
+                    send_message(user_id, "Текст слишком длинный, разрезание несколько частей")
                     continue
                 vk.messages.setActivity(peer_id=event.peer_id, type="typing")
                 users_generate.append(user_id)

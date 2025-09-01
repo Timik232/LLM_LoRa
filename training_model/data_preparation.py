@@ -5,7 +5,7 @@ Module with utility functions for training the model.
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
 def get_user_prompt(data: str) -> str:
@@ -23,8 +23,8 @@ def get_user_prompt(data: str) -> str:
 
 
 def dataset_to_json(
-    dataset: Dict[str, Any], filename: str, method: str = "classic"
-) -> List[Dict[str, str]]:
+    dataset: dict[str, Any], filename: str | Path, method: str = "classic"
+) -> list[dict[str, str]]:
     """
     Convert dataset to JSON lines format and save to a file.
 
@@ -32,13 +32,13 @@ def dataset_to_json(
         dataset (Dict[str, Any]): Source dataset containing:
             - 'system': System prompt template
             - 'examples': Dictionary of conversation examples
-        filename (str): Output file path where JSON lines are written.
+        filename (str | Path): Output file path where JSON lines are written.
         method (str): Data preparation method - "classic" or "game". Defaults to "classic".
 
     Returns:
         List[Dict[str, str]]: List of JSON objects representing each example.
     """
-    json_objects: List[Dict[str, str]] = []
+    json_objects: list[dict[str, str]] = []
     system_template = dataset.get("system", "")
     examples = dataset.get("examples", {})
 
@@ -49,8 +49,8 @@ def dataset_to_json(
         game_get_user_prompt = None
 
     # Initialize (or clear) the output file
-    with open(filename, "w", encoding="utf-8"):
-        pass
+    output_path = Path(filename)
+    output_path.write_text("", encoding="utf-8")
 
     for example in examples:
         system_message = system_template
@@ -72,13 +72,13 @@ def dataset_to_json(
         }
         json_objects.append(json_object)
 
-        with open(filename, "a", encoding="utf-8") as f:
+        with output_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(json_object, ensure_ascii=False) + "\n")
 
     return json_objects
 
 
-def transform_topics(topics: Dict[str, Any]) -> List[Dict[str, str]]:
+def transform_topics(topics: dict[str, Any]) -> list[dict[str, str]]:
     """
     Transforms a dictionary of topics with examples and responses into
     a list of dictionaries with 'instruction' and 'output' keys.
@@ -93,22 +93,25 @@ def transform_topics(topics: Dict[str, Any]) -> List[Dict[str, str]]:
             - 'instruction': one of the example strings
             - 'output': one of the response strings
     """
-    transformed: List[Dict[str, str]] = []
     link_pattern = re.compile(r"\b(?:https?|ftp)://[^\s\"'<>(){}|\\^`[\]]+")
 
-    for topic_data in topics.values():
-        examples = topic_data.get("examples", [])
-        responses = topic_data.get("responses", [])
-        for example in examples:
-            for response in responses:
-                if not link_pattern.search(response):
-                    transformed.append({"instruction": example, "output": response})
+    transformed = [
+        {"instruction": example, "output": response}
+        for topic_data in topics.values()
+        for example in topic_data.get("examples", [])
+        for response in topic_data.get("responses", [])
+        if not link_pattern.search(response)
+    ]
 
     return transformed
 
 
 def do_transform():
     """One run function to convert the dataset."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     base_dir = Path(__file__).resolve().parent.parent
 
     input_file_path = base_dir / "data" / "intents_dataset.json"
@@ -121,7 +124,9 @@ def do_transform():
     with output_file_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=4)
 
-    print("Converted to the new format")
+    logger.info(
+        "Dataset successfully converted to new format and saved to %s", output_file_path
+    )
 
 
 if __name__ == "__main__":

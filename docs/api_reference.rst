@@ -279,8 +279,8 @@ CLI Methods
 
 .. automethod:: main.LLMLoRAFramework.train_model
 .. automethod:: main.LLMLoRAFramework.evaluate_model
-.. automethod:: main.LLMLoRAFramework.convert_to_gguf
-.. automethod:: main.LLMLoRAFramework.convert_to_rkllm
+.. automethod:: training_model.LLMLoRaCLI.convert
+.. automethod:: training_model.LLMLoRaCLI.convert
 .. automethod:: main.LLMLoRAFramework.list_models
 .. automethod:: main.LLMLoRAFramework.clean_checkpoints
 
@@ -494,7 +494,7 @@ Model Evaluation Example
     # Initialize evaluator
     evaluator = ModelEvaluator(
         model_path="models/trained_model",
-        metrics=["bleu", "rouge", "perplexity"]
+        metrics=["bleu", "rogue", "perplexity"]
     )
 
     # Run evaluation
@@ -512,18 +512,11 @@ Model Conversion Example
     from training_model.one_file_train import convert_to_gguf, convert_to_rkllm
 
     # Convert to GGUF
-    gguf_path = convert_to_gguf(
-        model_path="models/trained_model",
-        output_path="models/gguf/",
-        quantization_type="q4_1"
-    )
+    # Convert to GGUF using CLI
+    python main.py convert --gguf=True
 
-    # Convert to RKLLM
-    rkllm_path = convert_to_rkllm(
-        model_path="models/trained_model",
-        platform="rk3588",
-        optimization_level=2
-    )
+    # Convert to RKLLM using CLI
+    python main.py convert --rkllm=True --target_platform=rk3588
 
 Fire CLI Usage
 ~~~~~~~~~~~~~~
@@ -543,7 +536,8 @@ Fire CLI Usage
     results = framework.evaluate_model(model_path="models/latest")
 
     # Convert model
-    framework.convert_to_gguf(model_path="models/latest")
+    # Convert model using CLI
+    python main.py convert --gguf=True --rkllm=True
 
 Advanced Configuration
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -568,7 +562,7 @@ Advanced Configuration
             "epochs": 1
         },
         "conversion": {
-            "convert_to_gguf": True,
+            "convert": {"gguf": True, "rkllm": True},
             "convert_to_rkllm": True,
             "quantization_type": "q4_1"
         }

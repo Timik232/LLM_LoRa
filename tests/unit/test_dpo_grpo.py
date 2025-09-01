@@ -12,28 +12,26 @@ This module tests:
 """
 
 import json
-import os
 import tempfile
-import pytest
-from unittest.mock import patch, MagicMock
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from omegaconf import OmegaConf
+import pytest
 from datasets import Dataset
-
+from omegaconf import OmegaConf
 
 # Import modules to test
 from training_model.dpo_train import (
-    validate_dpo_config,
-    prepare_dpo_data,
     dpo_train,
+    prepare_dpo_data,
+    validate_dpo_config,
 )
 from training_model.grpo_train import (
-    validate_grpo_config,
+    debug_reward_function,
+    grpo_train,
     prepare_grpo_data,
     reward_function,
-    test_reward_function,
-    grpo_train,
+    validate_grpo_config,
 )
 
 
@@ -56,8 +54,8 @@ class TestDPOConfiguration:
             )
 
             # Create test data files
-            data_dir = os.path.join(temp_dir, "data")
-            os.makedirs(data_dir, exist_ok=True)
+            data_dir = Path(temp_dir) / "data"
+            data_dir.mkdir(exist_ok=True)
 
             test_data = {
                 "system": "Test system",
@@ -70,15 +68,13 @@ class TestDPOConfiguration:
                 },
             }
 
-            with open(os.path.join(data_dir, "dpo_test.json"), "w") as f:
+            with (data_dir / "dpo_test.json").open("w") as f:
                 json.dump(test_data, f)
-            with open(os.path.join(data_dir, "dpo_dataset.json"), "w") as f:
+            with (data_dir / "dpo_dataset.json").open("w") as f:
                 json.dump(test_data, f)
 
             # Mock get_original_cwd to return temp directory
-            with patch(
-                "training_model.dpo_train.get_original_cwd", return_value=temp_dir
-            ):
+            with patch("training_model.dpo_train.get_original_cwd", return_value=temp_dir):
                 result = validate_dpo_config(cfg)
                 assert result is True
 
@@ -109,9 +105,7 @@ class TestDPOConfiguration:
                 }
             )
 
-            with patch(
-                "training_model.dpo_train.get_original_cwd", return_value=temp_dir
-            ):
+            with patch("training_model.dpo_train.get_original_cwd", return_value=temp_dir):
                 result = validate_dpo_config(cfg)
                 assert result is False
 
@@ -133,8 +127,8 @@ class TestDPODataPreparation:
             )
 
             # Create test data
-            data_dir = os.path.join(temp_dir, "data")
-            os.makedirs(data_dir, exist_ok=True)
+            data_dir = Path(temp_dir) / "data"
+            data_dir.mkdir(exist_ok=True)
 
             test_data = {
                 "system": "You are a helpful assistant",
@@ -152,14 +146,12 @@ class TestDPODataPreparation:
                 },
             }
 
-            with open(os.path.join(data_dir, "dpo_test.json"), "w") as f:
+            with (data_dir / "dpo_test.json").open("w") as f:
                 json.dump(test_data, f)
-            with open(os.path.join(data_dir, "dpo_dataset.json"), "w") as f:
+            with (data_dir / "dpo_dataset.json").open("w") as f:
                 json.dump(test_data, f)
 
-            with patch(
-                "training_model.dpo_train.get_original_cwd", return_value=temp_dir
-            ):
+            with patch("training_model.dpo_train.get_original_cwd", return_value=temp_dir):
                 train_data, val_data = prepare_dpo_data(cfg)
 
                 assert isinstance(train_data, Dataset)
@@ -189,33 +181,31 @@ class TestDPODataPreparation:
             )
 
             # Create test data with missing fields
-            data_dir = os.path.join(temp_dir, "data")
-            os.makedirs(data_dir, exist_ok=True)
+            data_dir = Path(temp_dir) / "data"
+            data_dir.mkdir(exist_ok=True)
 
             invalid_data = {
                 "system": "Test system",
                 "examples": {
                     "topic1": {
                         "prompt": "Test prompt",
-                        "chosen": "Good response"
+                        "chosen": "Good response",
                         # Missing rejected field
                     },
                     "topic2": {
                         "chosen": "Another good response",
-                        "rejected": "Bad response"
+                        "rejected": "Bad response",
                         # Missing prompt field
                     },
                 },
             }
 
-            with open(os.path.join(data_dir, "dpo_test.json"), "w") as f:
+            with (Path(data_dir) / "dpo_test.json").open("w") as f:
                 json.dump(invalid_data, f)
-            with open(os.path.join(data_dir, "dpo_dataset.json"), "w") as f:
+            with (Path(data_dir) / "dpo_dataset.json").open("w") as f:
                 json.dump(invalid_data, f)
 
-            with patch(
-                "training_model.dpo_train.get_original_cwd", return_value=temp_dir
-            ):
+            with patch("training_model.dpo_train.get_original_cwd", return_value=temp_dir):
                 train_data, val_data = prepare_dpo_data(cfg)
 
                 # Should filter out invalid examples
@@ -241,8 +231,8 @@ class TestGRPOConfiguration:
             )
 
             # Create test data files
-            data_dir = os.path.join(temp_dir, "data")
-            os.makedirs(data_dir, exist_ok=True)
+            data_dir = Path(temp_dir) / "data"
+            data_dir.mkdir(exist_ok=True)
 
             test_data = {
                 "system": "Test system",
@@ -254,14 +244,12 @@ class TestGRPOConfiguration:
                 },
             }
 
-            with open(os.path.join(data_dir, "test_ru.json"), "w") as f:
+            with (data_dir / "test_ru.json").open("w") as f:
                 json.dump(test_data, f)
-            with open(os.path.join(data_dir, "dataset_ru.json"), "w") as f:
+            with (data_dir / "dataset_ru.json").open("w") as f:
                 json.dump(test_data, f)
 
-            with patch(
-                "training_model.grpo_train.get_original_cwd", return_value=temp_dir
-            ):
+            with patch("training_model.grpo_train.get_original_cwd", return_value=temp_dir):
                 result = validate_grpo_config(cfg)
                 assert result is True
 
@@ -271,7 +259,7 @@ class TestGRPOConfiguration:
             {
                 "grpo": {
                     "val_data": "test_ru.json",
-                    "train_data": "dataset_ru.json"
+                    "train_data": "dataset_ru.json",
                     # Missing num_generations
                 }
             }
@@ -333,7 +321,7 @@ class TestGRPORewardFunction:
         ]
         correct_answer = "Разговор"
 
-        results = test_reward_function(completions, correct_answer)
+        results = debug_reward_function(completions, correct_answer)
 
         assert results["total_completions"] == 3
         assert results["positive_rewards"] == 1
@@ -359,8 +347,8 @@ class TestGRPODataPreparation:
             )
 
             # Create test data
-            data_dir = os.path.join(temp_dir, "data")
-            os.makedirs(data_dir, exist_ok=True)
+            data_dir = Path(temp_dir) / "data"
+            data_dir.mkdir(exist_ok=True)
 
             test_data = {
                 "system": "You are a helpful assistant",
@@ -384,14 +372,12 @@ class TestGRPODataPreparation:
                 },
             }
 
-            with open(os.path.join(data_dir, "test_ru.json"), "w") as f:
+            with (data_dir / "test_ru.json").open("w") as f:
                 json.dump(test_data, f)
-            with open(os.path.join(data_dir, "dataset_ru.json"), "w") as f:
+            with (data_dir / "dataset_ru.json").open("w") as f:
                 json.dump(test_data, f)
 
-            with patch(
-                "training_model.grpo_train.get_original_cwd", return_value=temp_dir
-            ):
+            with patch("training_model.grpo_train.get_original_cwd", return_value=temp_dir):
                 train_data, val_data = prepare_grpo_data(cfg)
 
                 assert isinstance(train_data, Dataset)
@@ -422,8 +408,8 @@ class TestGRPODataPreparation:
             )
 
             # Create test data with invalid structure
-            data_dir = os.path.join(temp_dir, "data")
-            os.makedirs(data_dir, exist_ok=True)
+            data_dir = Path(temp_dir) / "data"
+            data_dir.mkdir(exist_ok=True)
 
             invalid_data = {
                 "system": "Test system",
@@ -439,14 +425,12 @@ class TestGRPODataPreparation:
                 },
             }
 
-            with open(os.path.join(data_dir, "test_ru.json"), "w") as f:
+            with (Path(data_dir) / "test_ru.json").open("w") as f:
                 json.dump(invalid_data, f)
-            with open(os.path.join(data_dir, "dataset_ru.json"), "w") as f:
+            with (Path(data_dir) / "dataset_ru.json").open("w") as f:
                 json.dump(invalid_data, f)
 
-            with patch(
-                "training_model.grpo_train.get_original_cwd", return_value=temp_dir
-            ):
+            with patch("training_model.grpo_train.get_original_cwd", return_value=temp_dir):
                 train_data, val_data = prepare_grpo_data(cfg)
 
                 # Should filter out invalid examples
@@ -512,16 +496,18 @@ class TestTrainingIntegration:
             [{"prompt": "test2", "chosen": "good2", "rejected": "bad2"}]
         )
 
-        with patch("training_model.dpo_train.validate_dpo_config", return_value=True):
-            with patch(
+        with (
+            patch("training_model.dpo_train.validate_dpo_config", return_value=True),
+            patch(
                 "training_model.dpo_train.prepare_dpo_data",
                 return_value=(mock_train_data, mock_val_data),
-            ):
-                result = dpo_train(mock_model, mock_tokenizer, cfg)
+            ),
+        ):
+            result = dpo_train(mock_model, mock_tokenizer, cfg)
 
-                assert result == 100
-                mock_trainer.assert_called_once()
-                mock_trainer_instance.train.assert_called_once()
+            assert result == 100
+            mock_trainer.assert_called_once()
+            mock_trainer_instance.train.assert_called_once()
 
     @patch("training_model.grpo_train.GRPOTrainer")
     @patch("training_model.grpo_train.GRPOConfig")
@@ -583,16 +569,18 @@ class TestTrainingIntegration:
             [{"prompt": "test prompt2", "correct_answer": "Игра"}]
         )
 
-        with patch("training_model.grpo_train.validate_grpo_config", return_value=True):
-            with patch(
+        with (
+            patch("training_model.grpo_train.validate_grpo_config", return_value=True),
+            patch(
                 "training_model.grpo_train.prepare_grpo_data",
                 return_value=(mock_train_data, mock_val_data),
-            ):
-                result = grpo_train(mock_model, mock_tokenizer, cfg, None)
+            ),
+        ):
+            result = grpo_train(mock_model, mock_tokenizer, cfg, None)
 
-                assert result == 200
-                mock_trainer.assert_called_once()
-                mock_trainer_instance.train.assert_called_once()
+            assert result == 200
+            mock_trainer.assert_called_once()
+            mock_trainer_instance.train.assert_called_once()
 
 
 class TestDataFormatValidation:
@@ -605,7 +593,7 @@ class TestDataFormatValidation:
         dpo_dataset_path = project_root / "data" / "dpo_dataset.json"
 
         if dpo_dataset_path.exists():
-            with open(dpo_dataset_path, "r", encoding="utf-8") as f:
+            with dpo_dataset_path.open(encoding="utf-8") as f:
                 data = json.load(f)
 
             # Validate schema

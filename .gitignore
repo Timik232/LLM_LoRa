@@ -189,3 +189,11 @@ flash-attention
 .serena/
 
 .claude/
+
+4b-chat-vika/
+
+best_config.yaml
+
+CLAUDE.md
+
+.github/

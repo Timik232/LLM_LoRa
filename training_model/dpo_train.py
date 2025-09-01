@@ -1,8 +1,9 @@
 """File for training using DPO (Direct Preference Optimization) method"""
+
 import json
 import logging
-import os
-from typing import Callable, Optional, Tuple
+from collections.abc import Callable
+from pathlib import Path
 
 from datasets import Dataset
 from hydra.utils import get_original_cwd
@@ -24,26 +25,22 @@ def validate_dpo_config(cfg: DictConfig) -> bool:
         bool: True if configuration is valid
     """
     required_dpo_params = ["val_data", "train_data"]
-    missing_params = []
-
-    for param in required_dpo_params:
-        if not hasattr(cfg.dpo, param):
-            missing_params.append(param)
+    missing_params = [param for param in required_dpo_params if not hasattr(cfg.dpo, param)]
 
     if missing_params:
         logging.error(f"Missing required DPO parameters: {missing_params}")
         return False
 
     # Validate data files exist
-    data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
-    train_file = os.path.join(data_dir, cfg.dpo.train_data)
-    val_file = os.path.join(data_dir, cfg.dpo.val_data)
+    data_dir = Path(get_original_cwd()) / cfg.paths.data_dir
+    train_file = data_dir / cfg.dpo.train_data
+    val_file = data_dir / cfg.dpo.val_data
 
-    if not os.path.exists(train_file):
+    if not train_file.exists():
         logging.error(f"DPO training data file not found: {train_file}")
         return False
 
-    if not os.path.exists(val_file):
+    if not val_file.exists():
         logging.error(f"DPO validation data file not found: {val_file}")
         return False
 
@@ -51,7 +48,7 @@ def validate_dpo_config(cfg: DictConfig) -> bool:
     return True
 
 
-def prepare_dpo_data(cfg: DictConfig) -> Tuple[Dataset, Dataset]:
+def prepare_dpo_data(cfg: DictConfig) -> tuple[Dataset, Dataset]:
     """Prepare datasets for DPO training with preference pairs.
 
     Args:
@@ -60,17 +57,15 @@ def prepare_dpo_data(cfg: DictConfig) -> Tuple[Dataset, Dataset]:
     Returns:
         Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
     """
-    data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
+    data_dir = Path(get_original_cwd()) / cfg.paths.data_dir
 
-    with open(os.path.join(data_dir, cfg.dpo.val_data), "r", encoding="utf-8") as file:
+    with (data_dir / cfg.dpo.val_data).open(encoding="utf-8") as file:
         test_dataset = json.load(file)
 
-    with open(
-        os.path.join(data_dir, cfg.dpo.train_data), "r", encoding="utf-8"
-    ) as file:
+    with (data_dir / cfg.dpo.train_data).open(encoding="utf-8") as file:
         train_dataset = json.load(file)
 
-    def process_dpo_dataset(dataset: dict):
+    def process_dpo_dataset(dataset: dict) -> Dataset:
         """
         Convert a DPO dataset structured as:
           {
@@ -108,6 +103,10 @@ def prepare_dpo_data(cfg: DictConfig) -> Tuple[Dataset, Dataset]:
                 full_prompt = f"User: {prompt}"
 
             # Validate required fields
+            if not prompt:
+                logging.warning(f"Missing prompt for topic {topic_key}")
+                continue
+
             if not chosen:
                 logging.warning(f"Missing chosen response for topic {topic_key}")
                 continue
@@ -139,8 +138,8 @@ def dpo_train(
     model: AutoModel | PeftModel | PreTrainedModel,
     tokenizer: AutoTokenizer | PreTrainedTokenizer,
     cfg: DictConfig,
-    data_preparing_func: Optional[Callable] = None,
-    ref_model: Optional[PreTrainedModel] = None,
+    data_preparing_func: Callable | None = None,
+    ref_model: PreTrainedModel | None = None,
 ) -> int:
     """Execute DPO training pipeline.
 
@@ -222,8 +221,9 @@ def dpo_train(
     )
 
     # Memory optimization before training
-    import torch
     import gc
+
+    import torch
 
     torch.cuda.empty_cache()
     gc.collect()

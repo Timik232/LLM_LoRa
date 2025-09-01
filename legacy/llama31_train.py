@@ -143,7 +143,7 @@ def get_end_prompt(question):
     return f"""START\n{question}\nEND"""
 
 
-with open(cfg.dataset_name, "r", encoding="utf-8") as file:
+with open(cfg.dataset_name, encoding="utf-8") as file:
     train_dataset = json.load(file)
 
 # +
@@ -177,7 +177,7 @@ def dataset_to_json(dataset, filename):
 
 # -
 
-with open(os.path.join("../data", "test_ru.json"), "r", encoding="utf-8") as file:
+with open(os.path.join("../data", "test_ru.json"), encoding="utf-8") as file:
     test_dataset = json.load(file)
 
 # train_dataset
@@ -204,12 +204,12 @@ CUTOFF_LEN = 4000
 
 
 def generate_prompt(data_point):
-    promt = f"""<s>system
+    prompt = f"""<s>system
 {data_point['system']}</s><s>user
 {data_point['user']}</s><s>bot
 {data_point['bot']}</s>"""
-    #     print(promt)
-    return promt
+    #     print(prompt)
+    return prompt
 
 
 def tokenize(prompt, add_eos_token=True):
@@ -394,9 +394,7 @@ def generate_answer(model, prompt):
     chat = [
         {"role": "user", "content": prompt},
     ]
-    prompt = tokenizer.apply_chat_template(
-        chat, tokenize=False, add_generation_prompt=True
-    )
+    prompt = tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer.encode(prompt, add_special_tokens=False, return_tensors="pt")
     outputs = model.generate(input_ids=inputs.to(model.device), max_new_tokens=150)
 

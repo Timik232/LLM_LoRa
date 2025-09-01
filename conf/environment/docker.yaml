@@ -1,0 +1,5 @@
+# @package paths
+# Docker/Production environment configuration
+# Only contains environment-specific path overrides
+
+venv_python_path: "python"  # Use system python in Docker containers

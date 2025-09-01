@@ -1,7 +1,8 @@
 """MLflow logging utilities for training pipeline."""
 
 import logging
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any
 
 from omegaconf import DictConfig
 
@@ -26,10 +27,9 @@ def get_report_to_backend(cfg: DictConfig) -> str:
     # Map our backend names to HuggingFace trainer expected values
     if backend == "mlflow":
         return "mlflow"
-    elif backend == "wandb":
+    if backend == "wandb":
         return "wandb"
-    else:
-        return "none"
+    return "none"
 
 
 def log_training_config(cfg: DictConfig) -> None:
@@ -44,6 +44,19 @@ def log_training_config(cfg: DictConfig) -> None:
         # Check if MLflow is active
         if mlflow.active_run() is None:
             return
+
+        # Check if parameters are already logged to prevent conflicts
+        run = mlflow.active_run()
+        if run is None:
+            return
+
+        # Get already logged parameters
+        try:
+            run_data = mlflow.get_run(run.info.run_id)
+            existing_params = set(run_data.data.params.keys())
+        except Exception:
+            # If we can't get existing params, continue with empty set
+            existing_params = set()
 
         # Log model parameters
         model_params = {
@@ -108,7 +121,7 @@ def log_training_config(cfg: DictConfig) -> None:
                 "rkllm_num_npu_core": cfg.model.rkllm.num_npu_core,
             }
 
-        # Log all parameter groups
+        # Log all parameter groups, but filter out already logged parameters
         for params in [
             model_params,
             lora_params,
@@ -117,7 +130,16 @@ def log_training_config(cfg: DictConfig) -> None:
             quant_params,
             rkllm_params,
         ]:
-            mlflow.log_params(params)
+            # Filter out parameters that are already logged
+            filtered_params = {
+                key: value for key, value in params.items() if key not in existing_params
+            }
+
+            # Only log if there are new parameters
+            if filtered_params:
+                mlflow.log_params(filtered_params)
+                # Update the set of existing parameters
+                existing_params.update(filtered_params.keys())
 
         logging.info("Logged training configuration to MLflow")
 
@@ -125,7 +147,7 @@ def log_training_config(cfg: DictConfig) -> None:
         logging.warning(f"Failed to log configuration to MLflow: {e}")
 
 
-def log_training_artifacts(cfg: DictConfig, model_path: str, global_steps: int) -> None:
+def log_training_artifacts(cfg: DictConfig, model_path: str | Path, global_steps: int) -> None:
     """Log training artifacts to MLflow if enabled.
 
     Args:
@@ -135,38 +157,33 @@ def log_training_artifacts(cfg: DictConfig, model_path: str, global_steps: int) 
     """
     try:
         import mlflow
-        import os
 
         # Check if MLflow is active
         if mlflow.active_run() is None:
             return
 
         # Log final model checkpoint
-        checkpoint_path = os.path.join(
-            cfg.model.new_model, f"checkpoint-{global_steps}"
-        )
-        if os.path.exists(checkpoint_path):
+        checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
+        if checkpoint_path.exists():
             mlflow.log_artifacts(checkpoint_path, "model_checkpoint")
             logging.info(f"Logged model checkpoint to MLflow: {checkpoint_path}")
 
         # Log merged model if it exists
-        if os.path.exists(model_path):
+        if Path(model_path).exists():
             mlflow.log_artifacts(model_path, "merged_model")
             logging.info(f"Logged merged model to MLflow: {model_path}")
 
         # Log GGUF model if it exists
         if cfg.model.quant.get("enabled", True):
-            gguf_path = os.path.join(
-                cfg.paths.final_weights_path, cfg.model.quant.gguf_dir
-            )
-            if os.path.exists(gguf_path):
+            gguf_path = Path(cfg.paths.final_weights_path) / cfg.model.quant.gguf_dir
+            if gguf_path.exists():
                 mlflow.log_artifacts(gguf_path, "gguf_model")
                 logging.info(f"Logged GGUF model to MLflow: {gguf_path}")
 
         # Log RKLLM model if it exists
         if getattr(cfg.model, "rkllm", {}).get("enabled", False):
-            rkllm_path = os.path.join(cfg.paths.output_dir, cfg.model.rkllm.output_dir)
-            if os.path.exists(rkllm_path):
+            rkllm_path = Path(cfg.paths.output_dir) / cfg.model.rkllm.output_dir
+            if rkllm_path.exists():
                 mlflow.log_artifacts(rkllm_path, "rkllm_model")
                 logging.info(f"Logged RKLLM model to MLflow: {rkllm_path}")
 
@@ -174,7 +191,7 @@ def log_training_artifacts(cfg: DictConfig, model_path: str, global_steps: int) 
         logging.warning(f"Failed to log artifacts to MLflow: {e}")
 
 
-def log_evaluation_metrics(metrics: Dict[str, Any]) -> None:
+def log_evaluation_metrics(metrics: dict[str, Any]) -> None:
     """Log evaluation metrics to MLflow if enabled.
 
     Args:
@@ -237,11 +254,9 @@ def validate_mlflow_connection(cfg: DictConfig) -> bool:
 
         # Try to list experiments to test connection
         experiments = mlflow.search_experiments()
-        logging.info(
-            f"MLflow connection validated. Found {len(experiments)} experiments."
-        )
+        logging.info(f"MLflow connection validated. Found {len(experiments)} experiments.")
         return True
 
     except Exception as e:
-        logging.error(f"MLflow connection validation failed: {e}")
+        logging.exception(f"MLflow connection validation failed: {e}")
         return False
