@@ -11,7 +11,12 @@ from training_model.private_api import PRIVATE_API
 from .llama31_model import chat_saiga, model
 
 
-def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
+def send_message(
+    user_id: int,
+    msg: str,
+    stiker: int | None = None,
+    attach: str | None = None,
+) -> None:
     try:
         vk.messages.send(
             user_id=user_id,
@@ -25,7 +30,7 @@ def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
         return
 
 
-def main():
+def main() -> None:
     print("start")
     for event in longpoll.listen():
         if event.type == VkEventType.MESSAGE_NEW and event.to_me:

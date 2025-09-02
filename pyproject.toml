@@ -1,16 +1,15 @@
-[project]
+[tool.poetry]
 name = "llm-lora"
 version = "0.1.0"
 description = "Project for LLM training"
-authors = [
-    {name = "Timur Komolov",email = "komolov.timurka@mail.ru"}
-]
-license = {text = "MIT"}
+authors = ["Timur Komolov <komolov.timurka@mail.ru>"]
+license = "MIT"
 readme = "README.md"
-requires-python = ">=3.11, <=3.13"
 
 [tool.poetry.dependencies]
+python = ">=3.11, <=3.13"
 transformers = ">=4.53.0"
+
 peft = ">=0.14.0"
 hydra-core = ">=1.3.2"
 requests = ">=2.32.3"
@@ -84,20 +83,12 @@ select = ["E","F","W","B","N","ANN","S","I","UP","RET","SIM","RUF","LOG","PLC","
 ignore = ["E203", "W605", "PLR0913", "PLR0915", "PLR2004",
     "TRY003", "RET504", "S101", "ANN401", "S603", "RUF001", "RUF002"]
 
-# NOTE: TRY003 is ignored project-wide above to reduce noisy long-message warnings
-# Candidate additional rules that are often strict in large legacy codebases and
-# could be ignored on a per-team decision: ANN401 (dynamic typing), PLR* (too many
-# parameters/complex functions), PLC0415 (lazy imports), S105 (hardcoded creds).
-# If you want me to add any of these to the ignore list globally, tell me which
-# ones and I'll apply the change.
-
 [tool.ruff.lint.per-file-ignores]
 "docs/*" = ["ANN"]
-"vk_bot/*" = ["RUF001", "RUF002", "N999", "ANN001", "ANN201", "ANN401"]
-"training_model/one_file_train.py" = ["S603"]
+"vk_bot/*" = ["N999", "ANN001", "ANN201"]
 "training_model/*" = ["S105", "SIM108"]
 "legacy/*" = ["ALL"]
-"training_model/types.py" = ["UP007", "ANN401", "PYI036"]
+"training_model/types.py" = ["UP007", "PYI036"]
 "tests/*" = ["ANN001"]
 
 [tool.black]

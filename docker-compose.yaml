@@ -20,14 +20,20 @@ services:
 
   rkllm_converter:
     build:
-      context: rkllm_files/.
+      context: rkllm_files/
       dockerfile: Dockerfile.rkllm
+    image: rkllm_converter
     container_name: rkllm_converter
     volumes:
       - ./models:/app/models
       - ./data:/app/data
+      # Temporary volumes for conversion I/O
+      - /tmp/rkllm_input:/input
+      - /tmp/rkllm_output:/output
     environment:
       - PYTHONUNBUFFERED=1
+    profiles: ["converter"]
+
 
   llm_training:
     build:

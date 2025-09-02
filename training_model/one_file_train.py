@@ -34,6 +34,7 @@ from trl import SFTConfig, SFTTrainer
 
 import wandb
 
+from .auth_utils import _load_environment_if_needed
 from .data_preparation import dataset_to_json
 from .dpo_train import dpo_train
 from .exceptions import (
@@ -1087,17 +1088,19 @@ def convert_to_rkllm(
     do_parallelize: bool = False,
     hybrid_quantization: bool = False,
     num_npu_core: int = 1,
+    max_context: int = 4096,
 ) -> str:
     """Convert Hugging Face model to RKLLM format using dedicated RKLLM container.
 
     Args:
-        model_path: Path to input Hugging Face model directory.
+        model_path: Path to input Hugging Face model directory or GGUF file.
         output_dir: Directory to save RKLLM model.
         target_platform: Target Rockchip platform (rk3588, rk3576, etc.).
         quantization: Quantization type (w8a8, w4a16, w4a16_g128).
         do_parallelize: Enable model parallelization for larger models.
         hybrid_quantization: Enable hybrid quantization.
         num_npu_core: Number of NPU cores to use (1-3).
+        max_context: Maximum context length.
 
     Returns:
         Path to the generated RKLLM model file.
@@ -1139,15 +1142,19 @@ def convert_to_rkllm(
         if not result.stdout.strip():
             # Try to build the RKLLM container if it doesn't exist
             logging.warning("RKLLM container not found, attempting to build...")
+
+            # Build from the rkllm_files directory context
+            rkllm_files_path = Path("rkllm_files").resolve()
             build_cmd = [
                 "docker",
                 "build",
                 "-f",
-                "Dockerfile.rkllm",
+                str(rkllm_files_path / "Dockerfile.rkllm"),
                 "-t",
                 "rkllm_converter",
-                ".",
+                str(rkllm_files_path),
             ]
+
             build_result = subprocess.run(
                 build_cmd,
                 capture_output=True,
@@ -1159,11 +1166,19 @@ def convert_to_rkllm(
                 raise ImportError(
                     f"RKLLM container build failed. "
                     f"Please build the RKLLM container first:\n"
-                    f"docker build -f Dockerfile.rkllm -t rkllm_converter .\n\n"
+                    f"docker build -f rkllm_files/Dockerfile.rkllm -t "
+                    f"rkllm_converter rkllm_files/\n\n"
                     f"Build error: {build_result.stderr}",
                 )
 
             logging.info("RKLLM container built successfully")
+
+        # Auto-detect model format
+        model_format = "auto"
+        if abs_model_path.suffix.lower() == ".gguf":
+            model_format = "gguf"
+        elif abs_model_path.is_dir() and (abs_model_path / "config.json").exists():
+            model_format = "huggingface"
 
         # Prepare Docker command for RKLLM conversion
         docker_cmd = [
@@ -1186,6 +1201,10 @@ def convert_to_rkllm(
             quantization,
             "--num-npu-core",
             str(num_npu_core),
+            "--model-format",
+            model_format,
+            "--max-context",
+            str(max_context),
         ]
 
         # Add optional parameters
@@ -1702,6 +1721,8 @@ def post_new_dataset() -> None:
     Raises:
         DataProcessingError: If dataset upload fails.
     """
+    _load_environment_if_needed()
+    password = os.getenv("PASSWORD_BOT")
     try:
         url = "https://dataset.ser13volk.me/dataset_ru"
         dataset_path = Path("../data") / "dataset_ru.json"
@@ -1714,7 +1735,7 @@ def post_new_dataset() -> None:
             response = requests.post(
                 url,
                 files=files,
-                auth=HTTPBasicAuth("admin", ""),
+                auth=HTTPBasicAuth("admin", password),
                 timeout=30,
             )
 

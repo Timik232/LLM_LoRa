@@ -3,6 +3,105 @@
 echo "=== Starting Training Phase ==="
 poetry run python main.py pipeline --skip_test=true
 
+RKLLM_ENABLED=$(python3 -c "
+import yaml
+with open('.hydra/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+print(str(config['model']['rkllm']['enabled']).lower())
+")
+
+if [ "$RKLLM_ENABLED" = "true" ]; then
+    echo "=== Starting RKLLM Conversion ==="
+
+    # Extract parameters from Hydra config
+    MODEL_PATH=$(python3 -c "
+import yaml
+with open('.hydra/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+print(config['paths']['merged_model_path'])
+")
+
+    OUTPUT_PATH=$(python3 -c "
+import yaml
+with open('.hydra/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+output_dir = config['model']['rkllm']['output_dir']
+model_name = config['model']['new_model']
+print(f'{output_dir}/{model_name}.rkllm')
+")
+
+    TARGET_PLATFORM=$(python3 -c "
+import yaml
+with open('.hydra/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+print(config['model']['rkllm']['target_platform'])
+")
+
+    QUANTIZATION=$(python3 -c "
+import yaml
+with open('.hydra/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+print(config['model']['rkllm']['quantization'])
+")
+
+    NPU_CORES=$(python3 -c "
+import yaml
+with open('.hydra/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+print(config['model']['rkllm']['num_npu_core'])
+")
+
+    # Build the conversion command
+    CONVERSION_CMD="convert"
+    CONVERSION_CMD="$CONVERSION_CMD --model-path /app/models/$MODEL_PATH"
+    CONVERSION_CMD="$CONVERSION_CMD --output-path $OUTPUT_PATH"
+    CONVERSION_CMD="$CONVERSION_CMD --target-platform $TARGET_PLATFORM"
+    CONVERSION_CMD="$CONVERSION_CMD --quantization $QUANTIZATION"
+    CONVERSION_CMD="$CONVERSION_CMD --num-npu-core $NPU_CORES"
+
+    # Add optional parameters
+    DO_PARALLELIZE=$(python3 -c "
+import yaml
+with open('.hydra/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+print(str(config['model']['rkllm']['do_parallelize']).lower())
+")
+
+    if [ "$DO_PARALLELIZE" = "true" ]; then
+        CONVERSION_CMD="$CONVERSION_CMD --do-parallelize"
+    fi
+
+    HYBRID_QUANT=$(python3 -c "
+import yaml
+with open('.hydra/config.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+print(str(config['model']['rkllm']['hybrid_quantization']).lower())
+")
+
+    if [ "$HYBRID_QUANT" = "true" ]; then
+        CONVERSION_CMD="$CONVERSION_CMD --hybrid-quantization"
+    fi
+
+    # Create output directory if it doesn't exist
+    OUTPUT_DIR=$(dirname "$OUTPUT_PATH")
+    mkdir -p "/app/models/$OUTPUT_DIR"
+
+    # Run the RKLLM converter container
+    echo "Running RKLLM conversion: $CONVERSION_CMD"
+    docker run --rm \
+        -v $(pwd)/models:/app/models \
+        -v $(pwd)/data:/app/data \
+        rkllm_converter $CONVERSION_CMD
+
+    if [ $? -eq 0 ]; then
+        echo "RKLLM conversion completed successfully"
+    else
+        echo "RKLLM conversion failed"
+        exit 1
+    fi
+fi
+
+
 echo "=== Preparing Model for Ollama ==="
 GGUF_DIR="models/custom-model"
 mkdir -p "$GGUF_DIR"

@@ -36,7 +36,10 @@ RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock ./
-RUN pip install poetry && poetry install --no-root --only main
+RUN pip install poetry && \
+    pip install pyyaml && \
+    poetry lock --no-interaction --no-ansi || true && \
+    poetry install --no-root --only main --no-interaction --no-ansi
 
 # Create symlink for llama.cpp so training code can find it at expected relative path
 RUN ln -s /llama.cpp ./llama.cpp
