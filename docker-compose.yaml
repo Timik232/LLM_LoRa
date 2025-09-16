@@ -44,6 +44,7 @@ services:
       - ./models:/app/models
       - ./data:/app/data
       - ./conf:/app/conf
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       ollama:
         condition: service_healthy

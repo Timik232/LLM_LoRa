@@ -13,6 +13,7 @@ from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTo
 from trl import DPOConfig, DPOTrainer
 
 from .logging_utils import get_report_to_backend
+from .optimizer_factory import create_optimizer, get_optimizer_config_updates
 
 
 def validate_dpo_config(cfg: DictConfig) -> bool:
@@ -174,8 +175,28 @@ def dpo_train(
         sample = train_data[0]
         logging.debug(f"Sample DPO training data: {sample}")
 
+    # Create custom optimizer if enabled
+    custom_optimizer = None
+    try:
+        custom_optimizer = create_optimizer(model, cfg)
+        if custom_optimizer is not None:
+            logging.info("Using custom optimizer for DPO training")
+        else:
+            logging.info("Using default optimizer for DPO training")
+    except Exception as e:
+        raise ValueError(f"Failed to create custom optimizer: {e}") from e
+
     # Get the appropriate report_to backend based on configuration
     report_to_backend = get_report_to_backend(cfg)
+
+    # Get optimizer configuration updates for custom optimizers
+    optimizer_config_updates = get_optimizer_config_updates(cfg)
+
+    # Apply optimizer configuration updates
+    optim_name = optimizer_config_updates.get(
+        "optim",
+        getattr(cfg.training, "optim", "adamw_torch"),
+    )
 
     # Set up DPO configuration
     dpo_config = DPOConfig(
@@ -198,6 +219,7 @@ def dpo_train(
         report_to=report_to_backend,  # Use dynamic backend selection
         save_total_limit=cfg.training.save_total_limit,
         load_best_model_at_end=cfg.training.load_best,
+        optim=optim_name,  # Use potentially updated optimizer name
         # DPO-specific parameters
         beta=getattr(cfg.dpo, "beta", 0.1),
         loss_type=getattr(cfg.dpo, "loss_type", "sigmoid"),
@@ -211,14 +233,21 @@ def dpo_train(
         f"max_length={dpo_config.max_length}",
     )
 
-    trainer = DPOTrainer(
-        model=model,
-        ref_model=ref_model,  # Reference model (can be None to use same model)
-        args=dpo_config,
-        train_dataset=train_data,
-        eval_dataset=val_data,
-        processing_class=tokenizer,
-    )
+    # Create DPOTrainer with custom optimizer support
+    trainer_kwargs = {
+        "model": model,
+        "ref_model": ref_model,  # Reference model (can be None to use same model)
+        "args": dpo_config,
+        "train_dataset": train_data,
+        "eval_dataset": val_data,
+        "processing_class": tokenizer,
+    }
+
+    # Add custom optimizer if available
+    if custom_optimizer is not None:
+        trainer_kwargs["optimizers"] = (custom_optimizer, None)  # (optimizer, lr_scheduler)
+
+    trainer = DPOTrainer(**trainer_kwargs)
 
     # Memory optimization before training
     import gc

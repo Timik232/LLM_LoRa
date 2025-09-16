@@ -3,6 +3,7 @@ Module with utility functions for training the model.
 """
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -54,8 +55,9 @@ def dataset_to_json(
     output_path = Path(filename)
     output_path.write_text("", encoding="utf-8")
 
-    for example in examples:
+    for example in examples.values():
         system_message = system_template
+        logging.debug(example)
 
         # Use different data preparation methods based on configuration
         if method == "game":

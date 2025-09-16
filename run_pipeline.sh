@@ -3,53 +3,41 @@
 echo "=== Starting Training Phase ==="
 poetry run python main.py pipeline --skip_test=true
 
-RKLLM_ENABLED=$(python3 -c "
-import yaml
+RKLLM_ENABLED=$(poetry run python -c "import yaml,sys,json
 with open('.hydra/config.yaml', 'r') as f:
     config = yaml.safe_load(f)
-print(str(config['model']['rkllm']['enabled']).lower())
-")
+print(str(config['model']['rkllm']['enabled']).lower())")
 
 if [ "$RKLLM_ENABLED" = "true" ]; then
     echo "=== Starting RKLLM Conversion ==="
 
     # Extract parameters from Hydra config
-    MODEL_PATH=$(python3 -c "
-import yaml
-with open('.hydra/config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-print(config['paths']['merged_model_path'])
-")
+    MODEL_PATH=$(poetry run python -c "import yaml,sys,json
+    with open('.hydra/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(config['paths']['merged_model_path'])")
 
-    OUTPUT_PATH=$(python3 -c "
-import yaml
-with open('.hydra/config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-output_dir = config['model']['rkllm']['output_dir']
-model_name = config['model']['new_model']
-print(f'{output_dir}/{model_name}.rkllm')
-")
+    OUTPUT_PATH=$(poetry run python -c "import yaml,sys,json
+    with open('.hydra/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    output_dir = config['model']['rkllm']['output_dir']
+    model_name = config['model']['new_model']
+    print(f'{output_dir}/{model_name}.rkllm')")
 
-    TARGET_PLATFORM=$(python3 -c "
-import yaml
-with open('.hydra/config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-print(config['model']['rkllm']['target_platform'])
-")
+    TARGET_PLATFORM=$(poetry run python -c "import yaml,sys,json
+    with open('.hydra/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(config['model']['rkllm']['target_platform'])")
 
-    QUANTIZATION=$(python3 -c "
-import yaml
-with open('.hydra/config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-print(config['model']['rkllm']['quantization'])
-")
+    QUANTIZATION=$(poetry run python -c "import yaml,sys,json
+    with open('.hydra/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(config['model']['rkllm']['quantization'])")
 
-    NPU_CORES=$(python3 -c "
-import yaml
-with open('.hydra/config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-print(config['model']['rkllm']['num_npu_core'])
-")
+    NPU_CORES=$(poetry run python -c "import yaml,sys,json
+    with open('.hydra/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(config['model']['rkllm']['num_npu_core'])")
 
     # Build the conversion command
     CONVERSION_CMD="convert"
@@ -60,23 +48,19 @@ print(config['model']['rkllm']['num_npu_core'])
     CONVERSION_CMD="$CONVERSION_CMD --num-npu-core $NPU_CORES"
 
     # Add optional parameters
-    DO_PARALLELIZE=$(python3 -c "
-import yaml
-with open('.hydra/config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-print(str(config['model']['rkllm']['do_parallelize']).lower())
-")
+    DO_PARALLELIZE=$(poetry run python -c "import yaml,sys,json
+    with open('.hydra/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(str(config['model']['rkllm']['do_parallelize']).lower())")
 
     if [ "$DO_PARALLELIZE" = "true" ]; then
         CONVERSION_CMD="$CONVERSION_CMD --do-parallelize"
     fi
 
-    HYBRID_QUANT=$(python3 -c "
-import yaml
-with open('.hydra/config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
-print(str(config['model']['rkllm']['hybrid_quantization']).lower())
-")
+    HYBRID_QUANT=$(poetry run python -c "import yaml,sys,json
+    with open('.hydra/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    print(str(config['model']['rkllm']['hybrid_quantization']).lower())")
 
     if [ "$HYBRID_QUANT" = "true" ]; then
         CONVERSION_CMD="$CONVERSION_CMD --hybrid-quantization"

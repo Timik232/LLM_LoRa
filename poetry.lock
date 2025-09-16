@@ -34,6 +34,18 @@ test-trackers = ["comet-ml", "dvclive", "matplotlib", "mlflow", "swanlab", "tens
 testing = ["bitsandbytes", "datasets", "diffusers", "evaluate", "parameterized", "pytest (>=7.2.0,<=8.0.0)", "pytest-order", "pytest-subtests", "pytest-xdist", "scikit-learn", "scipy", "timm", "torchdata (>=0.8.0)", "torchpippy (>=0.2.0)", "tqdm", "transformers"]
 
 [[package]]
+name = "adam-mini"
+version = "1.1.1"
+description = "Adam-mini Optimizer"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "adam_mini-1.1.1-py3-none-any.whl", hash = "sha256:7af0cca7ecbe445cbd5d358043899c9e3e8ca29078108673e8c6b3578a136da1"},
+    {file = "adam_mini-1.1.1.tar.gz", hash = "sha256:1fd0977f34d2fb44f0f01703085d53e856bdf4ac75a52a96ec3a1dd9311683d0"},
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 description = "Happy Eyeballs for asyncio"
@@ -3079,6 +3091,18 @@ files = [
 ]
 
 [[package]]
+name = "nvidia-ml-py"
+version = "13.580.82"
+description = "Python Bindings for the NVIDIA Management Library"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "nvidia_ml_py-13.580.82-py3-none-any.whl", hash = "sha256:4361db337b0c551e2d101936dae2e9a60f957af26818e8c0c3a1f32b8db8d0a7"},
+    {file = "nvidia_ml_py-13.580.82.tar.gz", hash = "sha256:0c028805dc53a0e2a6985ea801888197765ac2ef8f1c9e29a7bf0d3616a5efc7"},
+]
+
+[[package]]
 name = "nvidia-nccl-cu12"
 version = "2.21.5"
 description = "NVIDIA Collective Communication Library (NCCL) Runtime"
@@ -4079,6 +4103,24 @@ files = [
 
 [package.extras]
 windows-terminal = ["colorama (>=0.4.6)"]
+
+[[package]]
+name = "pynvml"
+version = "13.0.1"
+description = "Python utilities for the NVIDIA Management Library"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "pynvml-13.0.1-py3-none-any.whl", hash = "sha256:e2b20e0a501eeec951e2455b7ab444759cf048e0e13a57b08049fa2775266aa8"},
+    {file = "pynvml-13.0.1.tar.gz", hash = "sha256:1245991d9db786b4d2f277ce66869bd58f38ac654e38c9397d18f243c8f6e48f"},
+]
+
+[package.dependencies]
+nvidia-ml-py = ">=12.0.0"
+
+[package.extras]
+test = ["pytest (>=3.6)", "pytest-cov", "pytest-runner"]
 
 [[package]]
 name = "pyparsing"
@@ -6193,4 +6235,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11, <=3.13"
-content-hash = "2fd4220cb0efd4d9c21c11493bf821841882961f82aad7d60d043248c3422804"
+content-hash = "384ab11dff3f89e69a02071367f5fa69a7e1e68eff78dffc4aa58fba51e8e200"

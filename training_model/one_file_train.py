@@ -26,6 +26,7 @@ from torch import nn
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    BatchEncoding,
     BitsAndBytesConfig,
     Gemma3ForCausalLM,
     PreTrainedTokenizerBase,
@@ -117,6 +118,7 @@ def init_logging_backend(cfg: DictConfig) -> None:
             if tracking_uri:
                 mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(experiment)
+            mlflow.enable_system_metrics_logging()
             mlflow.start_run()
             logging.info("Initialized mlflow logging backend")
         except Exception as e:
@@ -175,7 +177,7 @@ def change_dir(destination: str) -> Generator[None, None, None]:
         os.chdir(str(current_dir))
 
 
-def generate_prompt(tokenizer: AutoTokenizer, data_point: dict[str, str]) -> str:
+def generate_prompt(tokenizer: PreTrainedTokenizerBase, data_point: dict[str, str]) -> str:
     """Generate a chat template prompt for the model.
 
     Args:
@@ -206,10 +208,10 @@ def generate_prompt(tokenizer: AutoTokenizer, data_point: dict[str, str]) -> str
 
 
 def tokenize(
-    tokenizer: AutoTokenizer,
+    tokenizer: PreTrainedTokenizerBase,
     cutoff_len: int,
     prompt: str,
-) -> dict[str, torch.Tensor]:
+) -> BatchEncoding | dict[str, list]:
     """Tokenize text with specified length constraints.
 
     Args:
@@ -220,37 +222,22 @@ def tokenize(
     Returns:
         Tokenized output dictionary.
     """
-    # Use callable() to reliably check whether the tokenizer is callable.
-    if callable(tokenizer):
-        result = tokenizer(
-            prompt,
-            truncation=True,
-            max_length=cutoff_len,
-            padding="max_length",
-            return_tensors=None,
-            add_special_tokens=True,
-        )
-        # If the tokenizer returned a mapping of lists, convert to tensors
-        if isinstance(result, dict):
-            return {
-                k: torch.tensor(v) if not isinstance(v, torch.Tensor) else v
-                for k, v in result.items()
-            }
-        return {"input_ids": torch.tensor(result)}
-    encode_fn = getattr(tokenizer, "encode", None)
-    if callable(encode_fn):
-        # Return tensors for consistency with expected return type
-        return {"input_ids": torch.tensor(encode_fn(prompt, add_special_tokens=True))}
-    # Fallback: convert characters to ints then to tensor
-    return {"input_ids": torch.tensor([ord(c) for c in prompt])}
+    result = tokenizer(
+        prompt,
+        truncation=True,
+        max_length=cutoff_len,
+        padding=False,
+        return_tensors=None,
+    )
+    return result
 
 
 def generate_and_tokenize_prompt(
     data_point: dict[str, str],
-    tokenizer: AutoTokenizer,
+    tokenizer: PreTrainedTokenizerBase,
     cutoff: int,
     should_add_prompt: bool = False,
-) -> dict[str, Any]:
+) -> dict[str, Any] | BatchEncoding:
     """Generate and tokenize a complete prompt.
 
     Args:
@@ -274,10 +261,20 @@ def generate_and_tokenize_prompt(
         cutoff,
         full_prompt,
     )
+    if (
+        tokenized_full_prompt["input_ids"][-1] != tokenizer.eos_token_id
+        and len(tokenized_full_prompt["input_ids"]) < cutoff
+    ):
+        tokenized_full_prompt["input_ids"].append(tokenizer.eos_token_id)
+        if "attention_mask" in tokenized_full_prompt:
+            tokenized_full_prompt["attention_mask"].append(1)
     return tokenized_full_prompt
 
 
-def generate_grpo_prompt(tokenizer: AutoTokenizer, data_point: dict[str, str]) -> str:
+def generate_grpo_prompt(
+    tokenizer: PreTrainedTokenizerBase,
+    data_point: dict[str, str],
+) -> str:
     """Generate an enhanced prompt for GRPO training with JSON output instruction.
 
     Args:
@@ -312,6 +309,132 @@ def generate_grpo_prompt(tokenizer: AutoTokenizer, data_point: dict[str, str]) -
     return "\n".join([m.get("content", "") for m in messages if m.get("content")])
 
 
+def _load_json_file(file_path: Path, description: str) -> dict:
+    """Load and parse a JSON file with standardized error handling.
+
+    Args:
+        file_path: Path to the JSON file to load.
+        description: Human-readable description of the file for error messages.
+
+    Returns:
+        Loaded JSON data as a dictionary.
+
+    Raises:
+        DataProcessingError: If file loading or JSON parsing fails.
+    """
+    if not file_path.exists():
+        raise DataProcessingError(f"{description} file not found: {file_path}")
+
+    try:
+        return json.loads(file_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise DataProcessingError(f"Invalid JSON format " f"in {file_path}: {e}") from e
+    except Exception as e:
+        raise DataProcessingError(
+            f"Failed to read {description.lower()} from {file_path}: {e}",
+        ) from e
+
+
+def _validate_dataset_structure(data: dict, file_path: Path) -> None:
+    """Validate that dataset has required structure with 'system' and 'examples' keys.
+
+    Args:
+        data: The loaded dataset dictionary.
+        file_path: Path to the file (for error messages).
+
+    Raises:
+        DataProcessingError: If dataset structure is invalid.
+    """
+    if not isinstance(data, dict) or "examples" not in data:
+        raise DataProcessingError(
+            f"Unrecognized JSON structure in {file_path}. "
+            "Expected dict with 'examples' key.",
+        )
+
+
+def _process_auto_split_mode(base: Path, cfg: DictConfig) -> tuple[dict, dict]:
+    """Process auto_split mode: load single file and split automatically.
+
+    Args:
+        base: Base data directory path.
+        cfg: Configuration object.
+
+    Returns:
+        Tuple of (train_dataset, test_dataset).
+
+    Raises:
+        DataProcessingError: If data processing fails.
+    """
+    single_path = base / cfg.paths.train_data
+    raw = _load_json_file(single_path, "Training data")
+    _validate_dataset_structure(raw, single_path)
+
+    # Split the data automatically
+    all_items: list[dict] = raw["examples"]
+    try:
+        list_train, list_test = train_test_split(
+            all_items,
+            test_size=cfg.testing.test_split_ratio,
+            shuffle=True,
+            random_state=cfg.training.seed,
+        )
+    except Exception as e:
+        raise DataProcessingError(f"Failed to split dataset: {e}") from e
+
+    train_dataset = {"system": raw["system"], "examples": list_train}
+    test_dataset = {"system": raw["system"], "examples": list_test}
+    return train_dataset, test_dataset
+
+
+def _process_separate_validation_mode(base: Path, cfg: DictConfig) -> tuple[dict, dict]:
+    """Process separate_validation mode: load train file + separate validation file.
+
+    Args:
+        base: Base data directory path.
+        cfg: Configuration object.
+
+    Returns:
+        Tuple of (train_dataset, test_dataset).
+
+    Raises:
+        DataProcessingError: If data processing fails.
+    """
+    # Load training file
+    train_path = base / cfg.paths.train_data
+    train_raw = _load_json_file(train_path, "Training data")
+    _validate_dataset_structure(train_raw, train_path)
+
+    # Load separate validation file
+    val_path = base / cfg.testing.val_data_file
+    val_raw = _load_json_file(val_path, "Validation data")
+    _validate_dataset_structure(val_raw, val_path)
+
+    return train_raw, val_raw
+
+
+def _process_separate_files_mode(base: Path, cfg: DictConfig) -> tuple[dict, dict]:
+    """Process separate_files mode: load separate train and test files.
+
+    Args:
+        base: Base data directory path.
+        cfg: Configuration object.
+
+    Returns:
+        Tuple of (train_dataset, test_dataset).
+
+    Raises:
+        DataProcessingError: If data processing fails.
+    """
+    train_path = base / cfg.paths.train_data
+    test_path = base / cfg.paths.test_data
+
+    # Load both files (no structure validation - more flexible)
+    train_dataset = _load_json_file(train_path, "Training file")
+    test_dataset = _load_json_file(test_path, "Test file")
+
+    return train_dataset, test_dataset
+
+
 def data_preparation(
     cfg: DictConfig,
     tokenizer: AutoTokenizer,
@@ -319,9 +442,10 @@ def data_preparation(
 ) -> tuple[Dataset, Dataset]:
     """Prepare and preprocess training and validation datasets.
 
-    This function accepts either:
-      - a JSON file containing a dict with keys: "system" and "examples" (list), or
-      - separate train/test files when cfg.testing.use_separate_files is True.
+    This function supports three data source modes:
+      - "auto_split": Single file with automatic train/test splitting
+      - "separate_validation": Single train file + separate validation file
+      - "separate_files": Separate train and test files
 
     Args:
         cfg: Configuration object.
@@ -343,58 +467,20 @@ def data_preparation(
             # Fallback if Hydra context is not available
             base = Path.cwd() / cfg.paths.data_dir
 
-        if not cfg.testing.use_separate_files:
-            single_path = base / cfg.paths.train_data
-            if not single_path.exists():
-                raise DataProcessingError(f"Training data file not found: {single_path}")
+        # Get data source mode and process accordingly
+        data_mode = cfg.testing.data_source_mode
 
-            try:
-                raw = json.loads(single_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as e:
-                raise DataProcessingError(f"Invalid JSON format in {single_path}: {e}") from e
-            except Exception as e:
-                raise DataProcessingError(
-                    f"Failed to read training data from {single_path}: {e}",
-                ) from e
-
-            all_items: list[dict]
-            if isinstance(raw, dict) and "examples" in raw:
-                all_items = raw["examples"]
-            else:
-                raise DataProcessingError(
-                    f"Unrecognized JSON structure in {single_path}. "
-                    "Expected dict with 'examples' key.",
-                )
-
-            try:
-                list_train, list_test = train_test_split(
-                    all_items,
-                    test_size=cfg.testing.test_split_ratio,
-                    shuffle=True,
-                    random_state=cfg.training.seed,
-                )
-            except Exception as e:
-                raise DataProcessingError(f"Failed to split dataset: {e}") from e
-
-            train_dataset = {"system": raw["system"], "examples": list_train}
-            test_dataset = {"system": raw["system"], "examples": list_test}
-
+        if data_mode == "auto_split":
+            train_dataset, test_dataset = _process_auto_split_mode(base, cfg)
+        elif data_mode == "separate_validation":
+            train_dataset, test_dataset = _process_separate_validation_mode(base, cfg)
+        elif data_mode == "separate_files":
+            train_dataset, test_dataset = _process_separate_files_mode(base, cfg)
         else:
-            train_path = base / cfg.paths.train_file
-            test_path = base / cfg.paths.test_file
-
-            if not train_path.exists():
-                raise DataProcessingError(f"Training file not found: {train_path}")
-            if not test_path.exists():
-                raise DataProcessingError(f"Test file not found: {test_path}")
-
-            try:
-                train_dataset = json.loads(train_path.read_text(encoding="utf-8"))
-                test_dataset = json.loads(test_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as e:
-                raise DataProcessingError(f"Invalid JSON format in data files: {e}") from e
-            except Exception as e:
-                raise DataProcessingError(f"Failed to read data files: {e}") from e
+            raise ConfigurationError(
+                f"Invalid data_source_mode: '{data_mode}'. "
+                "Valid options: 'auto_split', 'separate_validation', 'separate_files'",
+            )
 
         # Use temporary directory for JSON files
         try:

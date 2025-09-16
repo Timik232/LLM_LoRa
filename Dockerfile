@@ -19,6 +19,9 @@ RUN apt-get update && \
         wget \
         jq  \
         libcurl4-openssl-dev \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
         && \
     rm -rf /var/lib/apt/lists/*
 
@@ -27,6 +30,13 @@ RUN ln -s /usr/bin/python3.11 /usr/bin/python
 RUN python3.11 -m ensurepip && python3.11 -m pip install --upgrade pip
 
 RUN pip install --upgrade --ignore-installed wheel==0.45.1
+
+# Install Docker CLI so the training container can control Docker to run the RKLLM converter
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+        > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && apt-get install -y docker-ce-cli && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /llama.cpp
 RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
@@ -40,6 +50,9 @@ RUN pip install poetry && \
     pip install pyyaml && \
     poetry lock --no-interaction --no-ansi || true && \
     poetry install --no-root --only main --no-interaction --no-ansi
+
+# Install FlashAttention-2 (requires compilation in Linux environment)
+RUN poetry run pip install flash-attn --no-build-isolation
 
 # Create symlink for llama.cpp so training code can find it at expected relative path
 RUN ln -s /llama.cpp ./llama.cpp

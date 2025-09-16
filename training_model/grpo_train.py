@@ -14,6 +14,7 @@ from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTo
 from trl import GRPOConfig, GRPOTrainer
 
 from .logging_utils import get_report_to_backend
+from .optimizer_factory import create_optimizer, get_optimizer_config_updates
 
 
 def validate_grpo_config(cfg: DictConfig) -> bool:
@@ -331,8 +332,28 @@ def grpo_train(
 
     logging.info(f"Generation config: {generation_config}")
 
+    # Create custom optimizer if enabled
+    custom_optimizer = None
+    try:
+        custom_optimizer = create_optimizer(model, cfg)
+        if custom_optimizer is not None:
+            logging.info("Using custom optimizer for GRPO training")
+        else:
+            logging.info("Using default optimizer for GRPO training")
+    except Exception as e:
+        raise ValueError(f"Failed to create custom optimizer: {e}") from e
+
     # Get the appropriate report_to backend based on configuration
     report_to_backend = get_report_to_backend(cfg)
+
+    # Get optimizer configuration updates for custom optimizers
+    optimizer_config_updates = get_optimizer_config_updates(cfg)
+
+    # Apply optimizer configuration updates
+    optim_name = optimizer_config_updates.get(
+        "optim",
+        getattr(cfg.training, "optim", "adamw_torch"),
+    )
 
     grpo_config = GRPOConfig(
         output_dir=cfg.model.new_model,
@@ -354,6 +375,7 @@ def grpo_train(
         save_total_limit=cfg.training.save_total_limit,
         load_best_model_at_end=cfg.training.load_best,
         num_generations=cfg.grpo.num_generations,
+        optim=optim_name,  # Use potentially updated optimizer name
         # GRPO-specific parameters
         epsilon=getattr(cfg.grpo, "epsilon", 0.2),
         beta=getattr(cfg.grpo, "beta", 0.01),
@@ -365,15 +387,22 @@ def grpo_train(
         f"loss_type={grpo_config.loss_type}, num_generations={grpo_config.num_generations}",
     )
 
-    trainer = GRPOTrainer(
-        model=model,
-        args=grpo_config,
-        train_dataset=train_data,
-        eval_dataset=val_data,
-        processing_class=tokenizer,
-        reward_funcs=reward_func,
-        generation_config=generation_config,
-    )
+    # Create GRPOTrainer with custom optimizer support
+    trainer_kwargs = {
+        "model": model,
+        "args": grpo_config,
+        "train_dataset": train_data,
+        "eval_dataset": val_data,
+        "processing_class": tokenizer,
+        "reward_funcs": reward_func,
+        "generation_config": generation_config,
+    }
+
+    # Add custom optimizer if available
+    if custom_optimizer is not None:
+        trainer_kwargs["optimizers"] = (custom_optimizer, None)  # (optimizer, lr_scheduler)
+
+    trainer = GRPOTrainer(**trainer_kwargs)
 
     # Memory optimization before training
     import gc

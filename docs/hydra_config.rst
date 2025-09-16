@@ -369,6 +369,180 @@ The framework supports three training methods that can be enabled independently:
 
 Multiple training methods can be chained together in a single pipeline run.
 
+Testing Configuration
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Testing Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - data_source_mode
+      - Data source handling mode for train/validation split
+      - "auto_split"
+    * - test_split_ratio
+      - Train/test split ratio for auto_split mode
+      - 0.05
+    * - val_data_file
+      - Validation file for separate_validation mode
+      - "test_ru.json"
+    * - test_dataset
+      - Test dataset file path
+      - "${paths.data_dir}/test_ru.json"
+    * - output_test_file
+      - Output path for processed test file
+      - "../test.json"
+
+Data Source Mode Configuration (testing.data_source_mode)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``data_source_mode`` parameter controls how training and validation datasets are loaded and processed. This configuration eliminates code duplication and provides flexible data handling approaches.
+
+**Available Modes:**
+
+.. list-table:: Data Source Mode Options
+    :widths: 25 35 40
+    :header-rows: 1
+
+    * - Mode
+      - File Requirements
+      - Description
+    * - auto_split
+      - Single training file
+      - Automatically splits one dataset file into train/validation sets
+    * - separate_validation
+      - Training file + validation file
+      - Uses separate files for training and validation data
+    * - separate_files
+      - Training file + test file
+      - Uses completely separate train and test datasets
+
+**Mode Details:**
+
+**1. auto_split Mode (Default)**
+
+Uses a single dataset file and automatically creates train/validation splits using scikit-learn's ``train_test_split``.
+
+.. code-block:: yaml
+
+    testing:
+      data_source_mode: "auto_split"
+      test_split_ratio: 0.05  # 5% for validation, 95% for training
+
+    paths:
+      train_data: "dataset_ru.json"  # Single file with all data
+
+**Required Configuration:**
+- ``paths.train_data``: Path to the single dataset file
+- ``testing.test_split_ratio``: Fraction of data to reserve for validation (0.0-1.0)
+
+**File Format:**
+The dataset must contain ``examples`` key with list of training samples and optional ``system`` key.
+
+.. code-block:: json
+
+    {
+      "system": "You are a helpful assistant",
+      "examples": [
+        {"user": "Hello", "bot": "Hi there!", "system": "Be friendly"},
+        {"user": "How are you?", "bot": "I'm doing well!", "system": "Be positive"}
+      ]
+    }
+
+**2. separate_validation Mode**
+
+Uses one file for training and a separate file for validation. Ideal when you have a predefined validation set.
+
+.. code-block:: yaml
+
+    testing:
+      data_source_mode: "separate_validation"
+      val_data_file: "validation_set.json"
+
+    paths:
+      train_data: "training_set.json"
+
+**Required Configuration:**
+- ``paths.train_data``: Path to training dataset file
+- ``testing.val_data_file``: Path to validation dataset file
+
+**File Format:**
+Both files must follow the same structure as ``auto_split`` mode with ``examples`` and optional ``system`` keys.
+
+**3. separate_files Mode**
+
+Uses completely separate training and test files. Most flexible option for custom dataset arrangements.
+
+.. code-block:: yaml
+
+    testing:
+      data_source_mode: "separate_files"
+
+    paths:
+      train_data: "custom_train.json"
+      test_data: "custom_test.json"
+
+**Required Configuration:**
+- ``paths.train_data``: Path to training dataset file
+- ``paths.test_data``: Path to test dataset file
+
+**File Format:**
+Files can have any valid JSON structure - the most flexible mode that doesn't enforce ``examples`` key validation.
+
+**Usage Examples:**
+
+.. code-block:: bash
+
+    # Use auto-split with custom ratio
+    python main.py testing.data_source_mode=auto_split testing.test_split_ratio=0.1
+
+    # Use separate validation file
+    python main.py testing.data_source_mode=separate_validation testing.val_data_file=my_val.json
+
+    # Use completely separate files
+    python main.py testing.data_source_mode=separate_files paths.test_data=my_test.json
+
+**Mode Comparison:**
+
+.. list-table:: Data Source Mode Comparison
+    :widths: 20 25 30 25
+    :header-rows: 1
+
+    * - Feature
+      - auto_split
+      - separate_validation
+      - separate_files
+    * - File Count
+      - 1 file
+      - 2 files
+      - 2 files
+    * - Split Control
+      - Automatic (configurable ratio)
+      - Manual (predefined files)
+      - Manual (custom files)
+    * - Structure Validation
+      - Enforced (examples key required)
+      - Enforced (examples key required)
+      - Flexible (any JSON structure)
+    * - Best For
+      - Simple datasets, quick prototyping
+      - Predefined validation sets
+      - Complex custom datasets
+
+**Implementation Notes:**
+
+The ``data_source_mode`` implementation uses helper functions to eliminate code duplication:
+
+- ``_load_json_file()``: Standardized JSON loading with error handling
+- ``_validate_dataset_structure()``: Validates required dataset structure for modes that need it
+- ``_process_auto_split_mode()``: Handles single-file splitting
+- ``_process_separate_validation_mode()``: Handles train + validation files  
+- ``_process_separate_files_mode()``: Handles separate train/test files
+
+This refactored approach reduces the main ``data_preparation()`` function from ~200 lines to ~50 lines while maintaining all functionality.
+
 Paths Configuration
 ~~~~~~~~~~~~~~~~~~~
 

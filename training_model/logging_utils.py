@@ -58,55 +58,11 @@ def log_training_config(cfg: DictConfig) -> None:
             # If we can't get existing params, continue with empty set
             existing_params = set()
 
-        # Log model parameters
-        model_params = {
-            "base_model": cfg.model.model_name,
-            "new_model_name": cfg.model.new_model,
-            "torch_dtype": cfg.model.torch_dtype,
-            "attn_implementation": cfg.model.attn_implementation,
-            "train_steps": cfg.model.train_steps,
-            "model_type": cfg.model.model_type,
-        }
-
-        # Log LoRA parameters
-        lora_params = {
-            "lora_r": cfg.model.lora.r,
-            "lora_alpha": cfg.model.lora.alpha,
-            "lora_dropout": cfg.model.lora.dropout,
-        }
-
-        # Log training parameters
-        training_params = {
-            "per_device_train_batch_size": cfg.training.per_device_train_batch_size,
-            "per_device_eval_batch_size": cfg.training.per_device_eval_batch_size,
-            "gradient_accumulation_steps": cfg.training.gradient_accumulation_steps,
-            "num_train_epochs": cfg.training.num_train_epochs,
-            "learning_rate": cfg.training.learning_rate,
-            "max_seq_length": cfg.training.max_seq_length,
-            "fp16": cfg.training.fp16,
-            "bf16": cfg.training.bf16,
-            "weight_decay": cfg.training.weight_decay,
-            "optim": cfg.training.optim,
-            "gradient_checkpointing": cfg.training.gradient_checkpointing,
-            "warmup_steps": cfg.training.warmup_steps,
-            "eval_steps": cfg.training.eval_steps,
-            "logging_steps": cfg.training.logging_steps,
-            "neftune_noise_alpha": cfg.training.neftune_noise_alpha,
-            "seed": cfg.training.seed,
-        }
-
         # Log training methods
         training_methods = {
             "use_sft": cfg.training.use_sft,
             "use_grpo": cfg.training.use_grpo,
             "use_dpo": cfg.training.use_dpo,
-        }
-
-        # Log quantization settings
-        quant_params = {
-            "gguf_conversion_enabled": cfg.model.quant.enabled,
-            "quantization_type": cfg.model.quant.qtype,
-            "use_8bit": cfg.model.quant.use_8bit,
         }
 
         # Log RKLLM settings if enabled
@@ -123,11 +79,7 @@ def log_training_config(cfg: DictConfig) -> None:
 
         # Log all parameter groups, but filter out already logged parameters
         for params in [
-            model_params,
-            lora_params,
-            training_params,
             training_methods,
-            quant_params,
             rkllm_params,
         ]:
             # Filter out parameters that are already logged
