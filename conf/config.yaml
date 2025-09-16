@@ -138,7 +138,8 @@ testing:
   prompt_for_deepeval: "test_prompt"
 
 logging:
-  logging_backend: "mlflow" #wand mflow none
+  log_level: "INFO"  # Logging level: "DEBUG" or "INFO"
+  logging_backend: "none" #wand mflow none
 
   wandb:
     project_name: "Gemma vika train"
@@ -147,6 +148,7 @@ logging:
   mlflow:
     experiment_name: "vika-experiment"
     tracking_uri: "http://localhost:5000"
+    log_artifacts: true
 
 
 hydra:

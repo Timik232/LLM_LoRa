@@ -35,7 +35,7 @@ python-dotenv = "^1.1.1"
 myst-parser = "^4.0.1"
 adam-mini = "^1.1.1"
 psutil = "^7.0.0"
-pynvml = "^13.0.1"
+nvidia-ml-py = "^13.580.82"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.1.0"

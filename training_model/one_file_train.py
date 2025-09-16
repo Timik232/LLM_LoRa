@@ -1732,14 +1732,17 @@ def train_pipeline(cfg: DictConfig) -> dict[str, Any]:
             raise ConversionError(f"Model processing pipeline failed: {e}") from e
 
         # Log training artifacts to MLflow if enabled
-        try:
-            log_training_artifacts(cfg, cfg.paths.output_dir, steps)
-            # Log evaluation metrics to MLflow if enabled
-            log_evaluation_metrics({"eval_loss": eval_loss, "global_steps": steps})
-        except Exception as e:
-            raise ExperimentTrackingError(
-                f"Failed to log training artifacts or metrics: {e}",
-            ) from e
+        if cfg.logging.logging_backend == "mlflow":
+            try:
+                if cfg.logging.mlflow.log_artifacts:
+                    logging.info("Logging training artifacts...")
+                    log_training_artifacts(cfg, cfg.paths.output_dir, steps)
+                # Log evaluation metrics to MLflow if enabled
+                log_evaluation_metrics({"eval_loss": eval_loss, "global_steps": steps})
+            except Exception as e:
+                raise ExperimentTrackingError(
+                    f"Failed to log training artifacts or metrics: {e}",
+                ) from e
 
         logging.info("Training pipeline completed")
         return {"eval_loss": eval_loss}

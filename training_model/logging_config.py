@@ -70,18 +70,31 @@ class ColoredFormatter(Formatter):
         return f"{color_code}{message}{RESET_COLOR}"
 
 
-def configure_logging(level: int = logging.INFO) -> None:
+def configure_logging(level: int | str = logging.INFO) -> None:
     """Configure root logger with colored output handler.
 
     Args:
-        level (int): Logging level to set (logging.INFO or logging.DEBUG).
+        level (int | str): Logging level to set. Can be:
+            - int: logging.INFO or logging.DEBUG
+            - str: "INFO", "DEBUG" (case insensitive)
             Defaults to logging.INFO.
 
     Raises:
-        ValueError: If level is not logging.INFO or logging.DEBUG
+        ValueError: If level is not a valid logging level
     """
+    # Convert string level to logging constant if needed
+    if isinstance(level, str):
+        level_str = level.upper()
+        if level_str == "INFO":
+            level = logging.INFO
+        elif level_str == "DEBUG":
+            level = logging.DEBUG
+        else:
+            raise ValueError(f"Invalid log level string: {level}. Use 'INFO' or 'DEBUG'")
+
+    # Validate integer levels
     if level != logging.INFO and level != logging.DEBUG:
-        raise ValueError("You can use only logging.info or logging.debug")
+        raise ValueError("You can use only logging.INFO or logging.DEBUG")
 
     # Clear existing handlers to avoid duplicates
     root_logger = logging.getLogger()

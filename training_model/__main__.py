@@ -1,5 +1,4 @@
 import json
-import logging
 from pathlib import Path
 
 from hydra import compose, initialize_config_dir
@@ -28,12 +27,12 @@ def main(cfg: DictConfig) -> None:
         None
 
     Workflow:
-    - Configures logging at DEBUG level
+    - Configures logging based on config log_level setting
     - Runs main training process
     - Prompts user to load model
     - Optionally runs model testing via LM Studio
     """
-    configure_logging(logging.DEBUG)
+    configure_logging(cfg.logging.log_level)
     # Use current working directory since get_original_cwd() requires Hydra decorator
     data_dir = Path.cwd() / cfg.paths.data_dir
     if cfg.training.use_optuna_optimize:

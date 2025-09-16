@@ -97,7 +97,7 @@ class LLMLoRaCLI:
         self._load_config(config_name, config_dir)
         self._apply_overrides(self.cfg, overrides)
 
-        configure_logging(logging.DEBUG)
+        configure_logging(self.cfg.logging.log_level)
         logger = logging.getLogger(__name__)
 
         # Validate configuration before training
@@ -132,7 +132,7 @@ class LLMLoRaCLI:
         self._load_config(config_name, config_dir)
         self._apply_overrides(self.cfg, overrides)
 
-        configure_logging(logging.DEBUG)
+        configure_logging(self.cfg.logging.log_level)
         logger = logging.getLogger(__name__)
 
         # Validate configuration before optimization
@@ -172,7 +172,7 @@ class LLMLoRaCLI:
         self._load_config(config_name, config_dir)
         self._apply_overrides(self.cfg, overrides)
 
-        configure_logging(logging.DEBUG)
+        configure_logging(self.cfg.logging.log_level)
         logger = logging.getLogger(__name__)
 
         conversions_performed = []
@@ -252,7 +252,7 @@ class LLMLoRaCLI:
         self._load_config(config_name, config_dir)
         self._apply_overrides(self.cfg, overrides)
 
-        configure_logging(logging.DEBUG)
+        configure_logging(self.cfg.logging.log_level)
         logger = logging.getLogger(__name__)
 
         # Prepare test dataset
@@ -297,7 +297,7 @@ class LLMLoRaCLI:
         self._load_config(config_name, config_dir)
         self._apply_overrides(self.cfg, overrides)
 
-        configure_logging(logging.DEBUG)
+        configure_logging(self.cfg.logging.log_level)
         logger = logging.getLogger(__name__)
 
         logger.info("[INFO] Starting complete LLM LoRa pipeline...")

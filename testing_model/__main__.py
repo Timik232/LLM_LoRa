@@ -1,5 +1,4 @@
 import json
-import logging
 from pathlib import Path
 
 import hydra
@@ -28,10 +27,10 @@ def test_main(cfg: DictConfig) -> None:
         None
 
     Workflow:
-    - Configures logging at DEBUG level
+    - Configures logging based on config log_level setting
     - Runs main testing process
     """
-    configure_logging(logging.DEBUG)
+    configure_logging(cfg.logging.log_level)
     if cfg.testing.test:
         with Path(cfg.testing.test_dataset).open(encoding="utf-8") as file:
             test_dataset = json.load(file)
