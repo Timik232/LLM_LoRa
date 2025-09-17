@@ -26,9 +26,8 @@ RUN pip install --upgrade --ignore-installed wheel==0.45.1
 WORKDIR /llama.cpp
 RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1 && \
     git clone https://github.com/ggml-org/llama.cpp.git . && \
-    LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH cmake -B build -DGGML_CUDA=ON && \
-    LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH cmake --build build --config Release \
-
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH cmake -S . -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release && \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:$LD_LIBRARY_PATH cmake --build build --config Release -- -j"$(nproc)"
 WORKDIR /training_model
 COPY pyproject.toml poetry.lock ./
 RUN pip install poetry && poetry config virtualenvs.create false && poetry install --no-root --only main
