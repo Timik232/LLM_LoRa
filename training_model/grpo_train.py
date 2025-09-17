@@ -139,10 +139,8 @@ def reward_function(completions: list[str], **kwargs: dict) -> list[float]:
             else:
                 rewards.append(0.0)
                 logging.debug(
-                    f"Completion {i} mismatch - generated: '{generated_action}', "
-                    f"expected: '{correct_answer}'",
+                    f"Completion {i} mismatch - generated: '{generated_action}', expected: '{correct_answer}'"
                 )
-
         except json.JSONDecodeError as e:
             logging.debug(
                 f"Completion {i} JSON decode error: {e} - "
