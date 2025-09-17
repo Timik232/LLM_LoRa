@@ -63,7 +63,6 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
             raise ValueError("train(cfg) did not return 'eval_loss' in metrics")
         return float(loss)
     except Exception as e:
-        logger = logging.getLogger(__name__)
         logger.exception(
             "Trial #%s encountered an error: %s",
             trial.number,
