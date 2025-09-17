@@ -971,18 +971,14 @@ def train(cfg: DictConfig) -> TrainingResult:
                     logging.info("Loading previous checkpoint for DPO training...")
                     checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
                     if checkpoint_path.exists():
-                        # Clean up previous model before loading new checkpoint
                         log_memory_usage("Before ->DPO transition: ")
-                        prev_model = model
-                        cleanup_model(prev_model, "previous model before DPO")
-
-                        # Load the adapter weights into a temporary model to avoid
-                        # rebinding the main `model` variable to a different type.
+                        base = model
                         peft_checkpoint_model = PeftModel.from_pretrained(
-                            cast(Any, model),
+                            cast(Any, base),
                             str(checkpoint_path),
                         )
                         model = cast(Any, peft_checkpoint_model)
+                        cleanup_model(base, "previous model before DPO")
                         log_memory_usage("After ->DPO transition: ")
                         logging.info(f"Loaded checkpoint from {checkpoint_path}")
                     else:
