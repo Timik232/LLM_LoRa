@@ -196,10 +196,16 @@ def test_from_dataset(
             "messages": [{"role": "user", "content": user_input}],
             "model": "game-model/v4/model-game_v4.1_q4.gguf",
         }
-        response = requests.post(llm_url, json=data, timeout=30)
-        model_answer = json.loads(response.json()["choices"][0]["message"]["content"])[
-            "MessageText"
-        ]
+        try:
+            response = requests.post(llm_url, json=data, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+            content = payload["choices"][0]["message"]["content"]
+            model_json = json.loads(content)
+            model_answer = model_json.get("MessageText", "")
+        except (requests.RequestException, KeyError, IndexError, json.JSONDecodeError) as err:
+            logger.exception("LLM request/parse failed for input: %s", user_input)
+            continue
         try:
             test_mention_number_of_values(user_input, model_answer)
             passed_tests += 1
