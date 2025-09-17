@@ -34,12 +34,12 @@ training:
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
   gradient_accumulation_steps: 6
-  num_train_epochs: 0.01
+  num_train_epochs: 1.5
   eval_steps: 50
   logging_steps: 5
   warmup_steps: 10
   learning_rate: 2e-5
-  fp16: true
+  fp16: false
   bf16: false
   weight_decay: 0.05
   max_seq_length: 2048
@@ -55,7 +55,7 @@ training:
   optuna_n_trials: 10
   seed: 42
   adam_mini:
-    enabled: false  # Enable Adam-mini optimizer (default: false, uses standard optimizer)
+    enabled: true  # Enable Adam-mini optimizer (default: false, uses standard optimizer)
     # Standard optimizer parameters (recommended to use same values as AdamW)
     learning_rate: ${training.learning_rate}  # Inherit from main training config
     weight_decay: ${training.weight_decay}    # Inherit from main training config
@@ -68,6 +68,11 @@ training:
     n_kv_heads: null   # Number of key-value heads (auto-detected from model.config.num_key_value_heads, optional)
     # Special optimization for small training runs
     use_single_lr_for_values: false  # Set to true for training steps <10k-20k to speed up initial convergence
+
+memory_management:
+  # Memory optimization settings for efficient training pipeline
+  aggressive_cleanup: true          # Enable aggressive memory cleanup between phases
+  log_memory_usage: true           # Log memory usage at key points in training
 
 data_preparation:
   method: "game" # Options: "classic" | "game"
@@ -139,7 +144,7 @@ testing:
 
 logging:
   log_level: "INFO"  # Logging level: "DEBUG" or "INFO"
-  logging_backend: "none" #wand mflow none
+  logging_backend: "mlflow" #wand mflow none
 
   wandb:
     project_name: "Gemma vika train"
@@ -148,7 +153,7 @@ logging:
   mlflow:
     experiment_name: "vika-experiment"
     tracking_uri: "http://localhost:5000"
-    log_artifacts: true
+    log_artifacts: false
 
 
 hydra:

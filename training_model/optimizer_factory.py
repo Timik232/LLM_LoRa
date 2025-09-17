@@ -93,6 +93,13 @@ def create_adam_mini_optimizer(model: Module, cfg: DictConfig) -> "Adam_mini":
         n_heads=n_heads,
         n_kv_heads=n_kv_heads,
     )
+    optimizer.wqk_names.add("q_proj")  # For Query
+    optimizer.wqk_names.add("k_proj")  # For Key
+    optimizer.wv_names.add("v_proj")  # For Value
+    optimizer.attn_proj_names.add("o_proj")  # For attention output projection
+    optimizer.mlp_names.add("up_proj")  # For MLP (up projection)
+    optimizer.mlp_names.add("down_proj")  # For MLP (down projection)
+    optimizer.mlp_names.add("gate_proj")  # For MLP (gate projection)
 
     # Apply single lr for values optimization for small training runs
     if cfg.training.adam_mini.use_single_lr_for_values:

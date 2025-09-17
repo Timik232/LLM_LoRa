@@ -2,7 +2,6 @@
 
 import contextlib
 import functools
-import gc
 import json
 import logging
 import os
@@ -55,6 +54,15 @@ from .logging_utils import (
     log_training_config,
     validate_mlflow_connection,
 )
+from .memory_utils import (
+    cleanup_dataset,
+    cleanup_model,
+    cleanup_tokenizer,
+    cleanup_trainer,
+    comprehensive_memory_cleanup,
+    log_memory_usage,
+)
+from .optimizer_factory import create_optimizer, get_optimizer_config_updates
 from .types import ModelType, TrainingResult
 
 _LOGGING_BACKEND: str | None = None
@@ -601,15 +609,15 @@ def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str) -> N
         except Exception as e:
             raise ConversionError(f"Failed to save merged model to {save_path}: {e}") from e
         finally:
-            # Clean up resources
+            # Clean up resources with comprehensive memory management
+            log_memory_usage("Before model merge cleanup: ")
             if "merged_model" in locals():
-                del merged_model
+                cleanup_model(merged_model, "merged_model")
             if "peft_model" in locals():
-                del peft_model
+                cleanup_model(peft_model, "peft_model")
             if "base_model" in locals():
-                del base_model
-            gc.collect()
-            torch.cuda.empty_cache()
+                cleanup_model(base_model, "base_model")
+            log_memory_usage("After model merge cleanup: ")
 
         logging.info("Model merged")
     except (ModelLoadingError, ConversionError):
@@ -752,7 +760,21 @@ def run_sft_training(
     except Exception as e:
         raise ConfigurationError(f"Failed to configure logging backend: {e}") from e
 
+    # Create custom optimizer if adam-mini is enabled
+    custom_optimizer = None
+    config_updates = {}
     try:
+        custom_optimizer = create_optimizer(model, cfg)
+        if custom_optimizer is not None:
+            config_updates = get_optimizer_config_updates(cfg)
+            logging.info("Using custom adam-mini optimizer for SFT training")
+    except Exception as e:
+        raise ConfigurationError(f"Failed to create custom optimizer: {e}") from e
+
+    try:
+        # Apply optimizer config updates if custom optimizer is being used
+        optim_setting = config_updates.get("optim", cfg.training.optim)
+
         sft_config = SFTConfig(
             output_dir=cfg.model.new_model,
             max_length=cfg.training.max_seq_length,
@@ -763,7 +785,7 @@ def run_sft_training(
             per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
             gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
             gradient_checkpointing=cfg.training.gradient_checkpointing,
-            optim=cfg.training.optim,
+            optim=optim_setting,
             num_train_epochs=cfg.training.num_train_epochs,
             eval_strategy="steps",
             eval_steps=cfg.training.eval_steps,
@@ -791,14 +813,21 @@ def run_sft_training(
     eval_loss = float("nan")
     trainer = None
     try:
-        trainer = SFTTrainer(
-            model=cast(nn.Module, model),
-            train_dataset=train_data,
-            eval_dataset=val_data,
-            peft_config=peft_config,
-            processing_class=cast(PreTrainedTokenizerBase, tokenizer),
-            args=sft_config,
-        )
+        # Create SFTTrainer with custom optimizer if available
+        trainer_kwargs = {
+            "model": cast(nn.Module, model),
+            "train_dataset": train_data,
+            "eval_dataset": val_data,
+            "peft_config": peft_config,
+            "processing_class": cast(PreTrainedTokenizerBase, tokenizer),
+            "args": sft_config,
+        }
+
+        # Add custom optimizer if adam-mini is enabled
+        if custom_optimizer is not None:
+            trainer_kwargs["optimizers"] = (custom_optimizer, None)
+
+        trainer = SFTTrainer(**trainer_kwargs)
         trainer.train()
         global_steps = trainer.state.global_step
         eval_results = trainer.evaluate()
@@ -811,13 +840,12 @@ def run_sft_training(
     finally:
         # Clean up SFT trainer to free memory before next training phase
         # Remove trainer if present
+        # Enhanced SFT training cleanup
+        log_memory_usage("Before SFT cleanup: ")
         with contextlib.suppress(NameError):
             if trainer is not None:
-                del trainer
-        gc.collect()
-        # Best-effort GPU cache cleanup; ignore errors.
-        with contextlib.suppress(Exception):
-            torch.cuda.empty_cache()
+                cleanup_trainer(trainer, "SFT trainer")
+        log_memory_usage("After SFT cleanup: ")
 
     return global_steps, eval_loss
 
@@ -868,6 +896,13 @@ def train(cfg: DictConfig) -> TrainingResult:
                     val_data,
                 )
                 training_completed = True
+
+                # Clean up SFT datasets after completion (GRPO/DPO will prepare their own)
+                if cfg.training.use_grpo or cfg.training.use_dpo:
+                    log_memory_usage("Before SFT dataset cleanup: ", cfg=cfg)
+                    cleanup_dataset(train_data, "SFT train dataset")
+                    cleanup_dataset(val_data, "SFT val dataset")
+                    log_memory_usage("After SFT dataset cleanup: ", cfg=cfg)
             except Exception as e:
                 raise TrainingError(f"SFT training phase failed: {e}") from e
 
@@ -881,6 +916,11 @@ def train(cfg: DictConfig) -> TrainingResult:
                     logging.info("Loading SFT checkpoint for GRPO training...")
                     checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
                     if checkpoint_path.exists():
+                        # Clean up previous model before loading new checkpoint
+                        log_memory_usage("Before SFT->GRPO transition: ")
+                        prev_model = model
+                        cleanup_model(prev_model, "previous model before GRPO")
+
                         # Load the adapter weights into a temporary model to avoid
                         # rebinding the main `model` variable to a different type.
                         peft_checkpoint_model = PeftModel.from_pretrained(
@@ -888,6 +928,7 @@ def train(cfg: DictConfig) -> TrainingResult:
                             str(checkpoint_path),
                         )
                         model = cast(Any, peft_checkpoint_model)
+                        log_memory_usage("After SFT->GRPO transition: ")
                         logging.info(f"Loaded SFT checkpoint from {checkpoint_path}")
                     else:
                         logging.warning(
@@ -911,6 +952,14 @@ def train(cfg: DictConfig) -> TrainingResult:
 
                 logging.info(f"GRPO completed. Final global steps: {global_steps}")
                 training_completed = True
+
+                # Clean up GRPO datasets after completion if DPO is next
+                if cfg.training.use_dpo:
+                    log_memory_usage("Before GRPO dataset cleanup: ", cfg=cfg)
+                    # Note: GRPO datasets are internal to grpo_train function,
+                    # but we can still do general memory cleanup
+                    comprehensive_memory_cleanup(cfg=cfg)
+                    log_memory_usage("After GRPO dataset cleanup: ", cfg=cfg)
             except Exception as e:
                 raise TrainingError(f"GRPO training phase failed: {e}") from e
 
@@ -924,6 +973,11 @@ def train(cfg: DictConfig) -> TrainingResult:
                     logging.info("Loading previous checkpoint for DPO training...")
                     checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
                     if checkpoint_path.exists():
+                        # Clean up previous model before loading new checkpoint
+                        log_memory_usage("Before ->DPO transition: ")
+                        prev_model = model
+                        cleanup_model(prev_model, "previous model before DPO")
+
                         # Load the adapter weights into a temporary model to avoid
                         # rebinding the main `model` variable to a different type.
                         peft_checkpoint_model = PeftModel.from_pretrained(
@@ -931,6 +985,7 @@ def train(cfg: DictConfig) -> TrainingResult:
                             str(checkpoint_path),
                         )
                         model = cast(Any, peft_checkpoint_model)
+                        log_memory_usage("After ->DPO transition: ")
                         logging.info(f"Loaded checkpoint from {checkpoint_path}")
                     else:
                         logging.warning(
@@ -982,9 +1037,14 @@ def train(cfg: DictConfig) -> TrainingResult:
 
                 # Clean up reference model if it was loaded
                 if ref_model is not None:
-                    del ref_model
-                    gc.collect()
-                    torch.cuda.empty_cache()
+                    cleanup_model(ref_model, "DPO reference model")
+
+                # Clean up DPO datasets after completion
+                log_memory_usage("Before DPO dataset cleanup: ", cfg=cfg)
+                # Note: DPO datasets are internal to dpo_train function,
+                # but we can still do general memory cleanup
+                comprehensive_memory_cleanup(cfg=cfg)
+                log_memory_usage("After DPO dataset cleanup: ", cfg=cfg)
             except Exception as e:
                 raise TrainingError(f"DPO training phase failed: {e}") from e
 
@@ -1017,12 +1077,25 @@ def train(cfg: DictConfig) -> TrainingResult:
         except Exception as e:
             raise TrainingError(f"Failed to merge and save final model: {e}") from e
         finally:
-            # Clean up model resources
+            # Final comprehensive cleanup after training pipeline
             logging.info("Model saved")
+            log_memory_usage("Before final training cleanup: ", cfg=cfg)
+
+            # Clean up model
             if "model" in locals():
-                del model
-            gc.collect()
-            torch.cuda.empty_cache()
+                cleanup_model(model, "final trained model")
+
+            # Clean up datasets (if they still exist from single-phase training)
+            if "train_data" in locals():
+                cleanup_dataset(train_data, "final train dataset")
+            if "val_data" in locals():
+                cleanup_dataset(val_data, "final val dataset")
+
+            # Clean up tokenizer
+            if "tokenizer" in locals():
+                cleanup_tokenizer(tokenizer, "final tokenizer")
+
+            log_memory_usage("After final training cleanup: ", cfg=cfg)
 
         return TrainingResult(global_steps=global_steps, eval_loss=eval_loss)
 
@@ -1752,13 +1825,18 @@ def train_pipeline(cfg: DictConfig) -> dict[str, Any]:
     except Exception as e:
         raise TrainingError(f"Unexpected error in training pipeline: {e}") from e
     finally:
-        # Finish/cleanup configured logging backend (if any)
+        # Finish/cleanup configured logging backend (if any) and comprehensive memory cleanup
         try:
             finish_logging_backend()
         except Exception as e:
             logging.warning(f"Failed to cleanup logging backend: {e}")
-        gc.collect()
-        torch.cuda.empty_cache()
+
+        # Final pipeline cleanup
+        log_memory_usage("Before pipeline completion cleanup: ")
+        from .memory_utils import comprehensive_memory_cleanup
+
+        comprehensive_memory_cleanup(aggressive=True)
+        log_memory_usage("After pipeline completion cleanup: ")
 
 
 def main_train(data_dir: str, cfg: DictConfig) -> dict[str, Any]:

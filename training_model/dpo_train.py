@@ -13,6 +13,7 @@ from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTo
 from trl import DPOConfig, DPOTrainer
 
 from .logging_utils import get_report_to_backend
+from .memory_utils import comprehensive_memory_cleanup, log_memory_usage
 from .optimizer_factory import create_optimizer, get_optimizer_config_updates
 
 
@@ -249,13 +250,9 @@ def dpo_train(
 
     trainer = DPOTrainer(**trainer_kwargs)
 
-    # Memory optimization before training
-    import gc
-
-    import torch
-
-    torch.cuda.empty_cache()
-    gc.collect()
+    # Memory optimization before training using enhanced utilities
+    log_memory_usage("Before DPO training: ", cfg=cfg)
+    comprehensive_memory_cleanup(cfg=cfg)
 
     logging.info("Starting DPO training...")
     trainer.train()
@@ -267,5 +264,9 @@ def dpo_train(
     if hasattr(trainer.state, "log_history") and trainer.state.log_history:
         final_log = trainer.state.log_history[-1]
         logging.info(f"Final DPO training metrics: {final_log}")
+
+    # Enhanced cleanup after DPO training completion
+    log_memory_usage("After DPO training: ", cfg=cfg)
+    comprehensive_memory_cleanup(aggressive=True, cfg=cfg)
 
     return global_steps
