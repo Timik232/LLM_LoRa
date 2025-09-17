@@ -90,7 +90,7 @@ def run_command(
     cwd: Path | None = None,
 ) -> bool:
     """Run a command and handle output."""
-    log_info("Running: %s", description)
+    log_info(f"Running: {description}")
     logging.info("Command: %s", " ".join(cmd))
 
     try:

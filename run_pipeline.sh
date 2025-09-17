@@ -120,19 +120,18 @@ HASH=$(sha256sum "$GGUF_FILE" | awk '{print $1}')
 BLOB_NAME="sha256:$HASH"
 echo "Calculated blob name: $BLOB_NAME"
 
-curl -T "$GGUF_FILE" -X POST "http://ollama:11434/api/blobs/$BLOB_NAME"
-
-if [ $? -ne 0 ]; then
-    echo "Failed to upload blob"
-    exit 1
-fi
+UPLOAD_CODE=$(curl -s -o /dev/null -w "%{http_code}" -T "$GGUF_FILE" -X POST "http://ollama:11434/api/blobs/$BLOB_NAME")
++if [ "${UPLOAD_CODE}" -lt 200 ] || [ "${UPLOAD_CODE}" -ge 400 ]; then
++    echo "Failed to upload blob (HTTP ${UPLOAD_CODE})"
++    exit 1
++fi
 
 JSON_PAYLOAD=$(jq -n \
     --arg name "custom-model" \
     --arg blob_name "$BLOB_NAME" \
     --arg gguf_file "$GGUF_FILE" \
-    '{name: $name, files: {
-    "$gguf_file": $blob_name}}')
+    '{name: $name, files: {($gguf_file): $blob_name}}')')
+
 
 CREATE_RESPONSE=$(curl -X POST http://ollama:11434/api/create \
     -H "Content-Type: application/json" \

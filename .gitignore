@@ -182,7 +182,7 @@ yandex8b-chat-vika
 vikhr8b-chat-vika
 judge-model
 models/
-/data
+data/
 
 flash-attention
 
@@ -196,7 +196,7 @@ best_config.yaml
 
 CLAUDE.md
 
-.github/
+.github/instructions/
 
 design.md
 

@@ -1156,7 +1156,7 @@ def merge_adapter_from_checkpoint(
             # Merge LoRA weights into base weights and free adapter memory
             # Cast peft_model to Any before calling merge_and_unload so the
             # Static analyzer does not confuse the return type with a Tensor.
-            merged_model = cast(nn.Module, cast(Any, peft_model).merge_and_unload())  # type: ignore[assignment]
+            merged_model = cast(nn.Module, peft_model.merge_and_unload())
             # merged_model is a model instance; save_pretrained is expected on
             # PreTrainedModel-like objects. Use a suppress block for optional
             # save behavior if the merged model doesn't implement it.
