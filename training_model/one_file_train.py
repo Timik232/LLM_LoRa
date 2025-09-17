@@ -1160,8 +1160,10 @@ def merge_adapter_from_checkpoint(
             # merged_model is a model instance; save_pretrained is expected on
             # PreTrainedModel-like objects. Use a suppress block for optional
             # save behavior if the merged model doesn't implement it.
-            with contextlib.suppress(Exception):
+            try:
                 merged_model.save_pretrained(save_path)  # type: ignore[attr-defined]
+            except AttributeError as e:
+                logger.warning(f"merged_model does not implement save_pretrained: {e}")
             tokenizer.save_pretrained(save_path)
         except Exception as e:
             raise ConversionError(f"Failed to merge and save model to {save_path}: {e}") from e
