@@ -40,9 +40,8 @@ RUN mkdir -p /etc/apt/keyrings && \
 
 WORKDIR /llama.cpp
 RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
-    cmake -B build && \
-    cmake --build build --config Release
-
+    cmake -S . -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build build --config Release -- -j"$(nproc)"
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock ./
