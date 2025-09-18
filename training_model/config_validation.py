@@ -260,11 +260,26 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
         logger.info("GRPO configuration not found - skipping GRPO validation")
         return True
 
-    required_grpo_params = ["val_data", "train_data", "num_generations"]
+    if not hasattr(cfg, "paths") or cfg.paths is None:
+        logger.error("Missing required GRPO parameters or cfg.paths: [paths section missing]")
+        return False
 
-    missing_params = [p for p in required_grpo_params if not hasattr(cfg.grpo, p)]
-    if missing_params:
-        logger.error(f"Missing required GRPO parameters: {missing_params}")
+    # Check GRPO-specific parameters in cfg.grpo
+    grpo_params = ["num_generations"]
+    missing_grpo_params = [p for p in grpo_params if not hasattr(cfg.grpo, p)]
+
+    # Check path-based parameters in cfg.paths
+    path_params = ["val_data", "train_data", "data_dir"]
+    missing_path_params = [p for p in path_params if getattr(cfg.paths, p, None) is None]
+
+    all_missing_params = []
+    if missing_grpo_params:
+        all_missing_params.extend([f"grpo.{p}" for p in missing_grpo_params])
+    if missing_path_params:
+        all_missing_params.extend([f"paths.{p}" for p in missing_path_params])
+
+    if all_missing_params:
+        logger.error(f"Missing required GRPO parameters or cfg.paths: {all_missing_params}")
         return False
 
     try:
@@ -275,8 +290,8 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
         work_dir = Path.cwd()
 
     data_dir = Path(work_dir) / cfg.paths.data_dir
-    train_file = data_dir / cfg.grpo.train_data
-    val_file = data_dir / cfg.grpo.val_data
+    train_file = data_dir / cfg.paths.train_data
+    val_file = data_dir / cfg.paths.val_data
 
     if not train_file.exists():
         logger.error(f"GRPO training data file not found: {train_file}")
@@ -286,7 +301,8 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
         logger.error(f"GRPO validation data file not found: {val_file}")
         return False
 
-    if cfg.grpo.num_generations <= 0:
+    num_generations = getattr(cfg.grpo, "num_generations", None)
+    if num_generations is not None and num_generations <= 0:
         logger.error("GRPO num_generations must be positive")
         return False
 

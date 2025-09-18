@@ -142,7 +142,7 @@ sudo apt-get install -y nvidia-container-toolkit
 sudo systemctl restart docker
 
 # 2. Verify GPU access in Docker
-docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
 
 # 3. Clone repository
 git clone https://github.com/timik232/LLM_LoRa.git
@@ -377,6 +377,34 @@ python -m testing_model --config-name=eval_config
 ├── Dockerfile                 # Main training container
 ├── run_pipeline.sh            # Training pipeline script
 └── CLAUDE.md                  # Project instructions
+```
+### Sequence diagram
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant M as main.py (Fire)
+  participant C as LLMLoRaCLI
+  participant T as Training (SFT/DPO/GRPO)
+  participant CV as Converters (GGUF/RKLLM)
+  participant TE as Testing (evaluation)
+  participant LG as Logging (W&B/MLflow)
+  participant OL as Ollama API
+
+  U->>M: Run "pipeline" (args/overrides)
+  M->>C: Fire dispatch
+  C->>C: Load Hydra config + apply overrides
+  C->>LG: Init logging backend
+  C->>T: train()/optimize()
+  T-->>LG: log metrics/artifacts
+  C->>CV: convert(gguf?, rkllm?)
+  alt RKLLM enabled
+    CV-->>C: rkllm output path
+  end
+  C->>TE: test_llm / dataset_to_json_for_test
+  TE-->>LG: log evaluation metrics
+  C-->>M: pipeline complete
+  M-->>U: Exit status and outputs
 ```
 
 ## 📊 Performance

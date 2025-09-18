@@ -52,6 +52,7 @@ def validate_dpo_config(cfg: DictConfig) -> bool:
     logging.info("DPO configuration validation passed")
     return True
 
+
 def prepare_dpo_data(cfg: DictConfig) -> tuple[Dataset, Dataset]:
     """Prepare datasets for DPO training with preference pairs.
 
@@ -203,31 +204,30 @@ def dpo_train(
 
     # Set up DPO configuration
     dpo_config = DPOConfig(
-        output_dir=cfg.model.new_model,
-        per_device_train_batch_size=cfg.training.per_device_train_batch_size,
-        per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
-        gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
-        learning_rate=cfg.training.learning_rate,
-        num_train_epochs=cfg.training.num_train_epochs,
-        logging_steps=cfg.training.logging_steps,
-        max_length=getattr(cfg.dpo, "max_length", cfg.other.cutoff_len),
+        output_dir=getattr(cfg.model, "new_model", "./output"),
+        per_device_train_batch_size=getattr(cfg.training, "per_device_train_batch_size", 1),
+        per_device_eval_batch_size=getattr(cfg.training, "per_device_eval_batch_size", 1),
+        gradient_accumulation_steps=getattr(cfg.training, "gradient_accumulation_steps", 1),
+        learning_rate=getattr(cfg.training, "learning_rate", 5e-5),
+        num_train_epochs=getattr(cfg.training, "num_train_epochs", 1),
+        logging_steps=getattr(cfg.training, "logging_steps", 100),
+        max_length=getattr(cfg.dpo, "max_length", getattr(cfg.other, "cutoff_len", 2048)),
         eval_strategy="steps",
-        eval_steps=cfg.training.eval_steps,
-        warmup_steps=cfg.training.warmup_steps,
-        fp16=cfg.training.fp16,
-        bf16=cfg.training.bf16,
-        weight_decay=cfg.training.weight_decay,
-        gradient_checkpointing=cfg.training.gradient_checkpointing,
+        eval_steps=getattr(cfg.training, "eval_steps", 500),
+        warmup_steps=getattr(cfg.training, "warmup_steps", 0),
+        fp16=getattr(cfg.training, "fp16", False),
+        bf16=getattr(cfg.training, "bf16", False),
+        weight_decay=getattr(cfg.training, "weight_decay", 0.01),
+        gradient_checkpointing=getattr(cfg.training, "gradient_checkpointing", False),
         gradient_checkpointing_kwargs={"use_reentrant": False},
         report_to=report_to_backend,  # Use dynamic backend selection
-        save_total_limit=cfg.training.save_total_limit,
-        load_best_model_at_end=cfg.training.load_best,
+        save_total_limit=getattr(cfg.training, "save_total_limit", 3),
+        load_best_model_at_end=getattr(cfg.training, "load_best", False),
         optim=optim_name,  # Use potentially updated optimizer name
         # DPO-specific parameters
         beta=getattr(cfg.dpo, "beta", 0.1),
         loss_type=getattr(cfg.dpo, "loss_type", "sigmoid"),
         max_prompt_length=getattr(cfg.dpo, "max_prompt_length", 1024),
-        max_target_length=getattr(cfg.dpo, "max_target_length", 1024),
     )
 
     logging.info(

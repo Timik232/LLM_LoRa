@@ -40,8 +40,9 @@ RUN mkdir -p /etc/apt/keyrings && \
 
 WORKDIR /llama.cpp
 RUN git clone https://github.com/ggml-org/llama.cpp.git . && \
-    cmake -S . -B build -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build build --config Release -- -j"$(nproc)"
+    cmake -B build && \
+    cmake --build build --config Release
+
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock ./
@@ -49,9 +50,6 @@ RUN pip install poetry && \
     pip install pyyaml && \
     poetry lock --no-interaction --no-ansi || true && \
     poetry install --no-root --only main --no-interaction --no-ansi
-
-# Install FlashAttention-2 (requires compilation in Linux environment)
-RUN poetry run pip install flash-attn --no-build-isolation
 
 # Create symlink for llama.cpp so training code can find it at expected relative path
 RUN ln -s /llama.cpp ./llama.cpp

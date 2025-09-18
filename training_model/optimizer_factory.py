@@ -93,13 +93,48 @@ def create_adam_mini_optimizer(model: Module, cfg: DictConfig) -> "Adam_mini":
         n_heads=n_heads,
         n_kv_heads=n_kv_heads,
     )
-    optimizer.wqk_names.add("q_proj")  # For Query
-    optimizer.wqk_names.add("k_proj")  # For Key
-    optimizer.wv_names.add("v_proj")  # For Value
-    optimizer.attn_proj_names.add("o_proj")  # For attention output projection
-    optimizer.mlp_names.add("up_proj")  # For MLP (up projection)
-    optimizer.mlp_names.add("down_proj")  # For MLP (down projection)
-    optimizer.mlp_names.add("gate_proj")  # For MLP (gate projection)
+    optimizer.wqk_names.add("q_proj")
+    optimizer.wqk_names.add("k_proj")
+    optimizer.wqk_names.add("self_attn.q_proj")  # If full path is needed
+    optimizer.wqk_names.add("self_attn.k_proj")
+
+    # For Value (wv_names)
+    optimizer.wv_names.add("v_proj")
+    optimizer.wv_names.add("self_attn.v_proj")
+
+    # For attention output projection (attn_proj_names)
+    optimizer.attn_proj_names.add("o_proj")
+    optimizer.attn_proj_names.add("self_attn.o_proj")
+
+    # For MLP (mlp_names)
+    optimizer.mlp_names.add("up_proj")
+    optimizer.mlp_names.add("down_proj")
+    optimizer.mlp_names.add("gate_proj")
+    optimizer.mlp_names.add("mlp.up_proj")  # If prefixed
+    optimizer.mlp_names.add("mlp.down_proj")
+    optimizer.mlp_names.add("mlp.gate_proj")
+
+    # If LoRA is applied, add LoRA-specific substrings if they appear in names
+    optimizer.wqk_names.add("q_proj.lora")  # Example for LoRA adapters
+    optimizer.wqk_names.add("k_proj.lora")
+    optimizer.wv_names.add("v_proj.lora")
+    optimizer.attn_proj_names.add("o_proj.lora")
+    optimizer.mlp_names.add("up_proj.lora")
+    optimizer.mlp_names.add("down_proj.lora")
+    optimizer.mlp_names.add("gate_proj.lora")
+    optimizer.wqk_names.add("attn_q")
+    optimizer.wqk_names.add("attn_k")
+
+    # For Value (wv_names) - matches "attn_v"
+    optimizer.wv_names.add("attn_v")
+
+    # For attention output projection (attn_proj_names) - matches "attn_output"
+    optimizer.attn_proj_names.add("attn_output")
+
+    # For MLP (mlp_names) - matches "ffn_up", "ffn_down", "ffn_gate"
+    optimizer.mlp_names.add("ffn_up")
+    optimizer.mlp_names.add("ffn_down")
+    optimizer.mlp_names.add("ffn_gate")
 
     # Apply single lr for values optimization for small training runs
     if cfg.training.adam_mini.use_single_lr_for_values:

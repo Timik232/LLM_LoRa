@@ -139,7 +139,8 @@ def reward_function(completions: list[str], **kwargs: dict) -> list[float]:
             else:
                 rewards.append(0.0)
                 logging.debug(
-                    f"Completion {i} mismatch - generated: '{generated_action}', expected: '{correct_answer}'"
+                    f"Completion {i} mismatch - generated:"
+                    f" '{generated_action}', expected: '{correct_answer}'"
                 )
         except json.JSONDecodeError as e:
             logging.debug(
@@ -147,9 +148,19 @@ def reward_function(completions: list[str], **kwargs: dict) -> list[float]:
                 f"Content: '{completion[:100]}...'",
             )
             rewards.append(-1.0)
-        except Exception as e:
-            logging.warning(f"Unexpected error processing completion {i}: {e}")
+        except (KeyError, TypeError, AttributeError) as e:
+            logging.warning(
+                f"Error parsing completion {i} structure: {e} - "
+                f"Content: '{completion[:100]}...'"
+            )
             rewards.append(-1.0)
+        except Exception as e:
+            logging.error(
+                f"Unexpected error processing completion {i}: {e} - "
+                f"Content: '{completion[:100]}...'"
+            )
+            rewards.append(-1.0)
+            raise
 
     return rewards
 

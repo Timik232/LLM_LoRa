@@ -33,8 +33,19 @@ def main(cfg: DictConfig) -> None:
     - Optionally runs model testing via LM Studio
     """
     configure_logging(cfg.logging.log_level)
-    # Use current working directory since get_original_cwd() requires Hydra decorator
-    data_dir = Path.cwd() / cfg.paths.data_dir
+
+    # Resolve data_dir path: if absolute use as-is, otherwise resolve relative to project root
+    data_dir_config = Path(cfg.paths.data_dir)
+    if data_dir_config.is_absolute():
+        data_dir = data_dir_config
+    else:
+        # Find project root by going up from this file's location
+        # training_model/__main__.py -> training_model/ -> project_root/
+        repo_root = Path(__file__).resolve().parents[1]
+        data_dir = repo_root / cfg.paths.data_dir
+
+    # Ensure the data directory exists
+    data_dir.mkdir(parents=True, exist_ok=True)
     if cfg.training.use_optuna_optimize:
         optuna_optimize(data_dir, cfg)
     else:

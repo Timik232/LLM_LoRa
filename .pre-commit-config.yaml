@@ -69,4 +69,4 @@ repos:
         name: codespell-spell-checker
         description: Check for common misspellings
         args: [--write-changes]
-        exclude: ^(\.git/|docs/_build/|models/|data/)
+        exclude: ^(\.git/|docs/_build/|models/|data/|README.md)

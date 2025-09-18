@@ -262,7 +262,7 @@ Fire CLI Interface
 Main CLI Controller
 ~~~~~~~~~~~~~~~~~~~
 
-.. automodule:: main
+.. automodule:: training_model
    :members:
    :undoc-members:
    :show-inheritance:
@@ -270,7 +270,7 @@ Main CLI Controller
 Key Classes
 ^^^^^^^^^^^
 
-.. autoclass:: main.LLMLoRAFramework
+.. autoclass:: training_model.LLMLoRaCLI
    :members:
    :undoc-members:
 

@@ -42,7 +42,7 @@ if [ "$RKLLM_ENABLED" = "true" ]; then
     # Build the conversion command
     CONVERSION_CMD="convert"
     CONVERSION_CMD="$CONVERSION_CMD --model-path /app/models/$MODEL_PATH"
-    CONVERSION_CMD="$CONVERSION_CMD --output-path $OUTPUT_PATH"
+    CONVERSION_CMD="$CONVERSION_CMD --output-path /app/models/$OUTPUT_PATH"
     CONVERSION_CMD="$CONVERSION_CMD --target-platform $TARGET_PLATFORM"
     CONVERSION_CMD="$CONVERSION_CMD --quantization $QUANTIZATION"
     CONVERSION_CMD="$CONVERSION_CMD --num-npu-core $NPU_CORES"

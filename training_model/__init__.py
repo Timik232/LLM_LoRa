@@ -4,6 +4,15 @@ import sys
 from pathlib import Path
 from typing import Optional  # noqa: F401
 
+__version__ = "0.1.0"
+__author__ = "Timur Komolov <komolov.timurka@mail.ru>"
+__description__ = (
+    "A comprehensive framework for "
+    "training Large Language Models using "
+    "LoRa (Low-Rank Adaptation) for memory-efficient "
+    "fine-tuning"
+)
+
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
 
@@ -197,6 +206,7 @@ class LLMLoRaCLI:
             # Use the merged model path as source and create RKLLM output directory
             model_path = self.cfg.paths.output_dir
             rkllm_output_dir = Path(self.cfg.paths.output_dir) / "rkllm"
+            rkllm_output_dir.mkdir(parents=True, exist_ok=True)
 
             # Get RKLLM parameters from config
             rkllm_config = self.cfg.get("model", {}).get("rkllm", {})
@@ -323,9 +333,134 @@ class LLMLoRaCLI:
 
         logger.info("[SUCCESS] Complete pipeline finished successfully!")
 
+    def convert_to_gguf(
+        self,
+        config_name: str = "config",
+        config_dir: str | None = None,
+        model_path: str | None = None,
+        outfile: str | None = None,
+        outtype: str = "f16",
+        **overrides: dict,
+    ) -> None:
+        """
+        Convert model to GGUF format.
+
+        Args:
+            config_name: Name of the config file (default: config)
+            config_dir: Path to config directory (default: ./conf)
+            model_path: Path to input model directory (default: from config)
+            outfile: Output file path (default: from config)
+            outtype: Output type specification (default: f16)
+            **overrides: Configuration overrides
+
+        Example:
+            python main.py convert_to_gguf
+            python main.py convert_to_gguf --model_path=models/trained_model
+        """
+        self._load_config(config_name, config_dir)
+        self._apply_overrides(self.cfg, overrides)
+
+        configure_logging(self.cfg.logging.log_level)
+        logger = logging.getLogger(__name__)
+
+        logger.info("[INFO] Converting to GGUF format...")
+
+        # Use provided parameters or defaults from config
+        model_path = model_path or self.cfg.paths.output_dir
+        outfile = outfile or str(Path(model_path) / self.cfg.model.outfile)
+
+        convert_to_gguf(
+            model_path=model_path,
+            outfile=outfile,
+            python_exe=self.cfg.paths.venv_python_path,
+            outtype=outtype,
+            cfg=self.cfg,
+        )
+        logger.info("[SUCCESS] GGUF conversion completed successfully!")
+
+    def convert_to_rkllm(
+        self,
+        config_name: str = "config",
+        config_dir: str | None = None,
+        model_path: str | None = None,
+        output_dir: str | None = None,
+        target_platform: str | None = None,
+        quantization: str | None = None,
+        do_parallelize: bool | None = None,
+        hybrid_quantization: bool | None = None,
+        num_npu_core: int | None = None,
+        max_context: int = 4096,
+        **overrides: dict,
+    ) -> None:
+        """
+        Convert model to RKLLM format for Rockchip NPU.
+
+        Args:
+            config_name: Name of the config file (default: config)
+            config_dir: Path to config directory (default: ./conf)
+            model_path: Path to input model directory (default: from config)
+            output_dir: Directory to save RKLLM model (default: from config)
+            target_platform: Target Rockchip platform (default: from config)
+            quantization: Quantization type (default: from config)
+            do_parallelize: Enable model parallelization (default: from config)
+            hybrid_quantization: Enable hybrid quantization (default: from config)
+            num_npu_core: Number of NPU cores to use (default: from config)
+            max_context: Maximum context length (default: 4096)
+            **overrides: Configuration overrides
+
+        Example:
+            python main.py convert_to_rkllm
+            python main.py convert_to_rkllm --model_path=models/trained_model
+            python main.py convert_to_rkllm --target_platform=rk3588 --quantization=w8a8
+        """
+        self._load_config(config_name, config_dir)
+        self._apply_overrides(self.cfg, overrides)
+
+        configure_logging(self.cfg.logging.log_level)
+        logger = logging.getLogger(__name__)
+
+        logger.info("[INFO] Converting to RKLLM format...")
+
+        # Get RKLLM config defaults
+        rkllm_config = self.cfg.get("model", {}).get("rkllm", {})
+
+        # Use provided parameters or defaults from config
+        model_path = model_path or self.cfg.paths.output_dir
+        output_dir = output_dir or str(Path(self.cfg.paths.output_dir) / "rkllm")
+        target_platform = target_platform or rkllm_config.get("target_platform", "rk3588")
+        quantization = quantization or rkllm_config.get("quantization", "w8a8")
+        do_parallelize = (
+            do_parallelize
+            if do_parallelize is not None
+            else rkllm_config.get("do_parallelize", False)
+        )
+        hybrid_quantization = (
+            hybrid_quantization
+            if hybrid_quantization is not None
+            else rkllm_config.get("hybrid_quantization", False)
+        )
+        num_npu_core = (
+            num_npu_core if num_npu_core is not None else rkllm_config.get("num_npu_core", 1)
+        )
+
+        result_path = convert_to_rkllm(
+            model_path=model_path,
+            output_dir=output_dir,
+            target_platform=target_platform,
+            quantization=quantization,
+            do_parallelize=do_parallelize,
+            hybrid_quantization=hybrid_quantization,
+            num_npu_core=num_npu_core,
+            max_context=max_context,
+        )
+        logger.info(f"[SUCCESS] RKLLM conversion completed: {result_path}")
+
 
 __all__ = [
     "LLMLoRaCLI",
+    "__author__",
+    "__description__",
+    "__version__",
     "configure_logging",
     "get_validation_summary",
     "main_train",
