@@ -31,7 +31,7 @@ case "$1" in
         ;;
 
     *)
-        error "Unknown command: $1"
+        log "Unknown command: $1"
         echo "Usage:"
         echo "  docker run rkllm_converter convert [options]"
         echo ""
