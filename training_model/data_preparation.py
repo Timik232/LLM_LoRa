@@ -66,9 +66,9 @@ def dataset_to_json(
             bot_message = str(example.get("answer", ""))
         else:
             # Classic method: simple instruction/output format
-            user_message = get_user_prompt(example.get("instruction", {}))
+            instruction = str(example.get("instruction", ""))
+            user_message = get_user_prompt(instruction)
             bot_message = str(example.get("output", ""))
-
         json_object = {
             "system": system_message,
             "user": user_message,
