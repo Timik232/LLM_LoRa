@@ -511,7 +511,7 @@ class TestTrainingIntegration:
 
     @patch("training_model.grpo_train.GRPOTrainer")
     @patch("training_model.grpo_train.GRPOConfig")
-    def test_grpo_train_integration(self, mock_trainer) -> None:
+    def test_grpo_train_integration(self, mock_grpo_config, mock_trainer) -> None:
         """Test GRPO training integration."""
         # Mock configuration
         cfg = OmegaConf.create(
