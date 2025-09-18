@@ -57,8 +57,8 @@ def legacy_main() -> None:
     Legacy main function that loads config with Hydra decorator.
     Kept for backward compatibility but no longer used as primary entry point.
     """
-    config_dir = Path.cwd() / "conf"
-    config_dir = config_dir.resolve()
+    # Resolve repo root relative to this file to avoid CWD-dependent failures
+    config_dir = (Path(__file__).resolve().parents[1] / "conf").resolve()
 
     with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
         cfg = compose(config_name="config")
