@@ -103,9 +103,8 @@ def create_adam_mini_optimizer(model: Module, cfg: DictConfig) -> "Adam_mini":
 
     # Apply single lr for values optimization for small training runs
     if cfg.training.adam_mini.use_single_lr_for_values:
-        optimizer.wv_names = {}
+        optimizer.wv_names.clear()
         logging.info("Applied single lr for values optimization for small training runs")
-
     logging.info(
         f"Created Adam-mini optimizer with: lr={cfg.training.adam_mini.learning_rate}, "
         f"weight_decay={cfg.training.adam_mini.weight_decay}, "
