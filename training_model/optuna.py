@@ -1,7 +1,9 @@
 """
 Hyperparameter optimization script using Optuna and Hydra for your LLM training pipeline.
 
-Place this file (e.g., `hpo_optuna.py`) at your project root. Adjust `TRAIN_MODULE` to the path of your training module (e.g., 'train' if your main file is `train.py`).
+Place this file (e.g., `hpo_optuna.py`) at your project root.
+ Adjust `TRAIN_MODULE` to the path of your training
+ module (e.g., 'train' if your main file is `train.py`).
 """
 
 import importlib
@@ -10,11 +12,13 @@ import logging
 import optuna
 from hydra import compose, initialize
 from hydra.core.global_hydra import GlobalHydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
+
+logger = logging.getLogger(__name__)
 
 
 def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
-    """Optuna objective function for hyperparameter optimization.
+    """Run a single Optuna objective.
 
     Args:
         trial: Optuna trial object used to suggest hyperparameters.
@@ -28,7 +32,10 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
         ValueError: If 'eval_loss' is not present in the training metrics.
     """
     try:
-        GlobalHydra.instance().clear()
+        # Clear any existing Hydra instance
+        if GlobalHydra().is_initialized():
+            GlobalHydra.instance().clear()
+
         lr = trial.suggest_float("training.learning_rate", 1e-6, 5e-5, log=True)
         epochs = trial.suggest_float("training.num_train_epochs", 0.5, 2)
         weight_decay = trial.suggest_float("training.weight_decay", 0.0, 0.3)
@@ -47,17 +54,21 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
             ]
             cfg: DictConfig = compose(config_name="config", overrides=overrides)
 
-        TRAIN_MODULE = "training_model.one_file_train"
-        module = importlib.import_module(TRAIN_MODULE)
-        # Предполагается, что функция train возвращает словарь {'eval_loss': float}
-        metrics: dict = module.main_train(data_dir, cfg)
+            train_module = "training_model.one_file_train"
+            module = importlib.import_module(train_module)
+            metrics: dict = module.main_train(data_dir, cfg)
+
         loss = metrics.get("eval_loss")
         if loss is None:
             raise ValueError("train(cfg) did not return 'eval_loss' in metrics")
         return float(loss)
     except Exception as e:
-        logging.error(f"Trial #{trial.number} encountered an error: {e}")
-        raise optuna.TrialPruned() from e
+        logger.exception(
+            "Trial #%s encountered an error: %s",
+            trial.number,
+            e,
+        )
+        raise optuna.TrialPruned from e
 
 
 def optuna_optimize(data_dir: str, cfg: DictConfig) -> None:
@@ -79,16 +90,14 @@ def optuna_optimize(data_dir: str, cfg: DictConfig) -> None:
 
     study.optimize(run_trial, n_trials=cfg.training.optuna_n_trials)
 
-    logging.info("Best trial:")
-    logging.info(f"  Loss: {study.best_value}")
-    logging.info("  Params:")
+    logger.info("Best trial:")
+    logger.info(f"  Loss: {study.best_value}")
+    logger.info("  Params:")
     for key, val in study.best_params.items():
-        logging.info(f"    {key}: {val}")
+        logger.info(f"    {key}: {val}")
 
     with initialize(version_base="1.1", config_path="../conf", job_name="optuna_final"):
         best_overrides = [f"{k}={v}" for k, v in study.best_params.items()]
         best_cfg: DictConfig = compose(config_name="config", overrides=best_overrides)
-        from omegaconf import OmegaConf
-
         OmegaConf.save(best_cfg, "best_config.yaml")
-    logging.info("Saved best configuration to best_config.yaml")
+    logger.info("Saved best configuration to best_config.yaml")

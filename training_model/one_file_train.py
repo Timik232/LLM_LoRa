@@ -1,5 +1,6 @@
-"""Main file for model training"""
+"""Main file for model training."""
 
+import contextlib
 import functools
 import gc
 import json
@@ -7,30 +8,152 @@ import logging
 import os
 import shutil
 import subprocess
+from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Callable, Dict, Generator, Tuple
+from typing import Any, cast
 
 import requests
 import torch
 from datasets import Dataset
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
-from peft import LoraConfig, PeftModel, get_peft_model
+from peft import LoraConfig, PeftModel
 from requests.auth import HTTPBasicAuth
-from torch import Tensor
+from sklearn.model_selection import train_test_split
+from torch import nn
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    BatchEncoding,
     BitsAndBytesConfig,
+    Gemma3ForCausalLM,
+    PreTrainedTokenizerBase,
 )
 from trl import SFTConfig, SFTTrainer
 
 import wandb
 
+from .auth_utils import _load_environment_if_needed
+from .data_preparation import dataset_to_json
+from .dpo_train import dpo_train
+from .exceptions import (
+    ConfigurationError,
+    ConversionError,
+    DataProcessingError,
+    ExperimentTrackingError,
+    ModelLoadingError,
+    TrainingError,
+)
 from .grpo_train import grpo_train
 from .logging_config import configure_logging
-from .utils import dataset_to_json, tokens_init
+from .logging_utils import (
+    get_report_to_backend,
+    log_evaluation_metrics,
+    log_training_artifacts,
+    log_training_config,
+    validate_mlflow_connection,
+)
+from .optimizer_factory import create_optimizer, get_optimizer_config_updates
+from .types import ModelType, TrainingResult
+
+_LOGGING_BACKEND: str | None = None
+
+
+logger = logging.getLogger(__name__)
+
+
+def init_logging_backend(cfg: DictConfig) -> None:
+    """Initialize experiment logging backend according to configuration.
+
+    Supported backends:
+        - "wandb": Uses Weights & Biases (requires `wandb` import).
+        - "mlflow": Uses MLflow (optional dependency).
+        - "none": No external experiment logging.
+
+    Selection precedence:
+        1. If `cfg.logging_backend` is present, its (lowercased) value is used.
+        2. Otherwise if a `cfg.wandb` node exists, "wandb" is chosen.
+        3. Otherwise defaults to "none".
+
+    This function swallows initialization errors and falls back to "none".
+
+    Args:
+        cfg: Hydra config object.
+
+    Returns:
+        None
+    """
+    global _LOGGING_BACKEND
+    log_dict = getattr(cfg, "logging", {})
+    backend = getattr(log_dict, "logging_backend", None)
+    if backend is None:
+        backend = "wandb" if getattr(log_dict, "wandb", None) else "none"
+    backend = str(backend).lower()
+    _LOGGING_BACKEND = backend
+
+    if backend == "wandb":
+        try:
+            wb_cfg = getattr(log_dict, "wandb", None) or {}
+            project = getattr(wb_cfg, "project_name", None)
+            anonymous = getattr(wb_cfg, "anonymous", None)
+            init_kwargs: dict[str, Any] = {}
+            if project:
+                init_kwargs["project"] = project
+            if anonymous is not None:
+                init_kwargs["anonymous"] = anonymous
+            wandb.init(**init_kwargs)
+            logging.info("Initialized wandb logging backend")
+        except Exception as e:
+            logging.warning(f"Failed to initialize wandb: {e}. Falling back to 'none'.")
+            _LOGGING_BACKEND = "none"
+
+    elif backend == "mlflow":
+        try:
+            import mlflow  # type: ignore[import]
+
+            ml_cfg = getattr(log_dict, "mlflow", None) or {}
+            experiment = getattr(ml_cfg, "experiment_name", "default")
+            tracking_uri = getattr(ml_cfg, "tracking_uri", None)
+            if tracking_uri:
+                mlflow.set_tracking_uri(tracking_uri)
+            mlflow.set_experiment(experiment)
+            mlflow.start_run()
+            logging.info("Initialized mlflow logging backend")
+        except Exception as e:
+            logging.warning(f"Failed to initialize mlflow: {e}. Falling back to 'none'.")
+            _LOGGING_BACKEND = "none"
+
+    else:
+        logging.info("No external logging backend initialized (using 'none').")
+
+
+def finish_logging_backend() -> None:
+    """Finish/cleanup the selected logging backend (if any).
+
+    Args:
+        None
+
+    Returns:
+        None
+    """
+    global _LOGGING_BACKEND
+    if _LOGGING_BACKEND == "wandb":
+        try:
+            wandb.finish()
+            logging.info("wandb finished")
+        except Exception as e:
+            logging.warning(f"wandb.finish() failed: {e}")
+    elif _LOGGING_BACKEND == "mlflow":
+        try:
+            import mlflow  # type: ignore[import]
+
+            mlflow.end_run()
+            logging.info("mlflow run ended")
+        except Exception as e:
+            logging.warning(f"mlflow.end_run() failed: {e}")
+    _LOGGING_BACKEND = None
 
 
 @contextmanager
@@ -38,235 +161,527 @@ def change_dir(destination: str) -> Generator[None, None, None]:
     """Context manager for temporarily changing the working directory.
 
     Args:
-        destination (str): Path to the target directory
+        destination: Path to the target directory.
 
     Yields:
-        None: Enters the target directory during context execution
+        None: Enters the target directory during context execution.
     """
-    current_dir = os.getcwd()
-    os.chdir(destination)
+    current_dir = Path.cwd()
+    target_dir = Path(destination)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    os.chdir(str(target_dir))
     try:
         yield
     finally:
-        os.chdir(current_dir)
+        os.chdir(str(current_dir))
 
 
-def generate_prompt(tokenizer: AutoTokenizer, data_point: Dict[str, str]) -> str:
+def generate_prompt(tokenizer: PreTrainedTokenizerBase, data_point: dict[str, str]) -> str:
     """Generate a chat template prompt for the model.
 
     Args:
-        tokenizer (AutoTokenizer): Hugging Face tokenizer
-        data_point (Dict[str, str]): Dictionary containing system, user and bot messages
+        tokenizer: Hugging Face tokenizer.
+        data_point: Dictionary containing system, user and bot messages.
 
     Returns:
-        str: Formatted chat prompt
+        Formatted chat prompt.
     """
-    return tokenizer.apply_chat_template(
-        [
-            {"role": "system", "content": data_point["system"]},
-            {"role": "user", "content": data_point["user"]},
-            {"role": "assistant", "content": data_point["bot"]},
-        ],
-        tokenize=False,
-    )
+    apply_fn = getattr(tokenizer, "apply_chat_template", None)
+    if callable(apply_fn):
+        res = apply_fn(
+            [
+                {"role": "system", "content": data_point["system"]},
+                {"role": "user", "content": data_point["user"]},
+                {"role": "assistant", "content": data_point["bot"]},
+            ],
+            tokenize=False,
+        )
+        return str(res)
+    # Fallback: join messages into a single prompt string
+    parts = [
+        data_point.get("system", ""),
+        data_point.get("user", ""),
+        data_point.get("bot", ""),
+    ]
+    return "\n".join([p for p in parts if p])
 
 
 def tokenize(
-    tokenizer: AutoTokenizer | Callable, cutoff_len: int, prompt: str
-) -> Dict[str, torch.Tensor]:
+    tokenizer: PreTrainedTokenizerBase,
+    cutoff_len: int,
+    prompt: str,
+) -> dict[str, Any] | BatchEncoding:
     """Tokenize text with specified length constraints.
 
     Args:
-        tokenizer (AutoTokenizer): Hugging Face tokenizer
-        cutoff_len (int): Maximum sequence length
-        prompt (str): Text to tokenize
+        tokenizer: Hugging Face tokenizer.
+        cutoff_len: Maximum sequence length.
+        prompt: Text to tokenize.
 
     Returns:
-        Dict[str, torch.Tensor]: Tokenized output dictionary
+        Tokenized output dictionary (e.g.,
+        {"input_ids": tensor(...), "attention_mask": tensor(...)}).
     """
     return tokenizer(
         prompt,
         truncation=True,
         max_length=cutoff_len,
         padding="max_length",
-        return_tensors=None,
         add_special_tokens=True,
+        return_tensors="pt",
     )
 
 
 def generate_and_tokenize_prompt(
-    data_point: Dict[str, str],
-    tokenizer: AutoTokenizer,
+    data_point: dict[str, str],
+    tokenizer: PreTrainedTokenizerBase,
     cutoff: int,
     should_add_prompt: bool = False,
-) -> Dict[str, str] | Dict[str, Tensor]:
+) -> dict[str, Any]:
     """Generate and tokenize a complete prompt.
 
     Args:
-        data_point (Dict[str, str]): Dictionary containing conversation data
-        tokenizer (AutoTokenizer): Hugging Face tokenizer
-        cutoff (int): Maximum sequence length
-        should_add_prompt (bool): used for grpo, when
-            needed dict with keyword "prompt" returned
+        data_point: Dictionary containing conversation data.
+        tokenizer: Hugging Face tokenizer.
+        cutoff: Maximum sequence length.
+        should_add_prompt: Used for GRPO, when needed
+        dict with keyword "prompt" returned.
 
     Returns:
-        Dict[str, torch.Tensor]: Tokenized prompt dictionary
+        Tokenized prompt dictionary or a dict containing
+        "prompt" when should_add_prompt=True.
     """
+
+    if should_add_prompt:
+        # Enhanced prompt for GRPO training with JSON output instruction
+        enhanced_prompt = generate_grpo_prompt(tokenizer, data_point)
+        return {"prompt": enhanced_prompt, "correct_answer": data_point["bot"]}
+    # Standard SFT prompt
     full_prompt = generate_prompt(tokenizer, data_point)
     tokenized_full_prompt = tokenize(
         tokenizer,
         cutoff,
         full_prompt,
     )
-    if should_add_prompt:
-        return {"prompt": full_prompt, "correct_answer": data_point["bot"]}
-    else:
-        return tokenized_full_prompt
+    return tokenized_full_prompt
+
+
+def generate_grpo_prompt(
+    tokenizer: PreTrainedTokenizerBase, data_point: dict[str, str]
+) -> str:
+    """Generate an enhanced prompt for GRPO training with JSON output instruction.
+
+    Args:
+        tokenizer: Hugging Face tokenizer.
+        data_point: Dictionary containing system, user and bot messages.
+
+    Returns:
+        Enhanced prompt string with JSON instruction.
+    """
+    # Start with the standard chat template
+    messages = [
+        {"role": "system", "content": data_point["system"]},
+        {"role": "user", "content": data_point["user"]},
+    ]
+
+    # Add JSON instruction to the user message
+    enhanced_user_content = (
+        f"{data_point['user']}\n\n"
+        "Please respond with a valid JSON object in the following format: "
+        '{"Content": {"Action": "<your_action>"}}. '
+        "Choose the most appropriate action based on the context."
+    )
+
+    messages[1]["content"] = enhanced_user_content
+
+    # Apply chat template without the assistant response (for GRPO generation)
+    apply_fn = getattr(tokenizer, "apply_chat_template", None)
+    if callable(apply_fn):
+        res = apply_fn(messages, tokenize=False, add_generation_prompt=True)
+        return str(res)
+    # Fallback: join messages into a single prompt string
+    return "\n".join([m.get("content", "") for m in messages if m.get("content")])
 
 
 def data_preparation(
-    cfg: DictConfig, tokenizer: AutoTokenizer, should_add_prompt: bool = False
-) -> Tuple[Dataset, Dataset]:
+    cfg: DictConfig,
+    tokenizer: AutoTokenizer,
+    should_add_prompt: bool = False,
+) -> tuple[Dataset, Dataset]:
     """Prepare and preprocess training and validation datasets.
 
+    This function accepts either:
+      - a JSON file containing a dict with keys: "system" and "examples" (list), or
+      - separate train/test files when cfg.testing.use_separate_files is True.
+
     Args:
-        cfg (DictConfig): Configuration object
-        tokenizer (AutoTokenizer): Hugging Face tokenizer
-        should_add_prompt (bool): If True, returns dict with "prompt" key for grpo training
+        cfg: Configuration object.
+        tokenizer: Hugging Face tokenizer.
+        should_add_prompt: If True, returns dict with "prompt" key for grpo training.
 
     Returns:
-        Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
+        Tuple containing train and validation datasets.
+
+    Raises:
+        DataProcessingError: If data loading or preprocessing fails.
+        ConfigurationError: If configuration parameters are invalid.
     """
-    data_dir = os.path.join(get_original_cwd(), cfg.paths.data_dir)
-    with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
-        test_dataset = json.load(file)
-    with open(
-        os.path.join(get_original_cwd(), cfg.model.dataset_name), "r", encoding="utf-8"
-    ) as file:
-        train_dataset = json.load(file)
+    try:
+        # Use current working directory or the configured data directory
+        try:
+            base = Path(get_original_cwd()) / cfg.paths.data_dir
+        except ValueError:
+            # Fallback if Hydra context is not available
+            base = Path.cwd() / cfg.paths.data_dir
 
-    # Use temporary directory for JSON files
-    with TemporaryDirectory() as temp_dir:
-        train_json = os.path.join(temp_dir, "train.json")
-        test_json = os.path.join(temp_dir, "test.json")
-        dataset_to_json(train_dataset, train_json)
-        dataset_to_json(test_dataset, test_json)
+        if not cfg.testing.use_separate_files:
+            single_path = base / cfg.paths.train_data
+            if not single_path.exists():
+                raise DataProcessingError(f"Training data file not found: {single_path}")
 
-        from datasets import load_dataset
+            try:
+                raw = json.loads(single_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as e:
+                raise DataProcessingError(f"Invalid JSON format in {single_path}: {e}") from e
+            except Exception as e:
+                raise DataProcessingError(
+                    f"Failed to read training data from {single_path}: {e}",
+                ) from e
 
-        dataset = load_dataset(
-            "json", data_files={"train": train_json, "test": test_json}
-        )
+            all_items: list[dict]
+            if isinstance(raw, dict) and "examples" in raw:
+                all_items = raw["examples"]
+            else:
+                raise DataProcessingError(
+                    f"Unrecognized JSON structure in {single_path}. "
+                    "Expected dict with 'examples' key.",
+                )
 
-        tokenize_partial = functools.partial(
-            generate_and_tokenize_prompt,
-            tokenizer=tokenizer,
-            cutoff=cfg.other.cutoff_len,
-            should_add_prompt=should_add_prompt,
-        )
-        train_data = dataset["train"].map(tokenize_partial)
-        val_data = dataset["test"].map(tokenize_partial)
+            try:
+                list_train, list_test = train_test_split(
+                    all_items,
+                    test_size=cfg.testing.test_split_ratio,
+                    shuffle=True,
+                    random_state=cfg.training.seed,
+                )
+            except Exception as e:
+                raise DataProcessingError(f"Failed to split dataset: {e}") from e
 
-    return train_data, val_data
+            train_dataset = {"system": raw["system"], "examples": list_train}
+            test_dataset = {"system": raw["system"], "examples": list_test}
+
+        else:
+            train_path = base / cfg.paths.train_file
+            test_path = base / cfg.paths.test_file
+
+            if not train_path.exists():
+                raise DataProcessingError(f"Training file not found: {train_path}")
+            if not test_path.exists():
+                raise DataProcessingError(f"Test file not found: {test_path}")
+
+            try:
+                train_dataset = json.loads(train_path.read_text(encoding="utf-8"))
+                test_dataset = json.loads(test_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as e:
+                raise DataProcessingError(f"Invalid JSON format in data files: {e}") from e
+            except Exception as e:
+                raise DataProcessingError(f"Failed to read data files: {e}") from e
+
+        # Use temporary directory for JSON files
+        try:
+            with TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+                train_json = str(temp_path / "train.json")
+                test_json = str(temp_path / "test.json")
+
+                try:
+                    dataset_to_json(train_dataset, train_json, cfg.data_preparation.method)
+                    dataset_to_json(test_dataset, test_json, cfg.data_preparation.method)
+                except Exception as e:
+                    raise DataProcessingError(
+                        f"Failed to convert dataset to JSON format: {e}",
+                    ) from e
+
+                from datasets import load_dataset
+
+                try:
+                    dataset = load_dataset(
+                        "json",
+                        data_files={"train": train_json, "test": test_json},
+                    )
+
+                    tokenize_partial = functools.partial(
+                        generate_and_tokenize_prompt,
+                        tokenizer=tokenizer,
+                        cutoff=cfg.other.cutoff_len,
+                        should_add_prompt=should_add_prompt,
+                    )
+
+                    ds_train = cast(Any, dataset["train"])
+                    ds_test = cast(Any, dataset["test"])
+
+                    # Prefer using the datasets library `.map` when available.
+                    # Otherwise, map manually and build a Dataset.
+                    if hasattr(ds_train, "map"):
+                        train_data = ds_train.map(tokenize_partial)
+                    else:
+                        # ds_train might be a list of examples
+                        train_list = [tokenize_partial(cast(dict, x)) for x in ds_train]
+                        train_data = Dataset.from_list(train_list)
+
+                    if hasattr(ds_test, "map"):
+                        val_data = ds_test.map(tokenize_partial)
+                    else:
+                        val_list = [tokenize_partial(cast(dict, x)) for x in ds_test]
+                        val_data = Dataset.from_list(val_list)
+                except Exception as e:
+                    raise DataProcessingError(
+                        f"Failed to load or tokenize datasets: {e}",
+                    ) from e
+        except Exception as e:
+            if isinstance(e, DataProcessingError):
+                raise
+            raise DataProcessingError(f"Failed during dataset processing: {e}") from e
+
+        return train_data, val_data
+    except (DataProcessingError, ConfigurationError):
+        raise
+    except Exception as e:
+        raise DataProcessingError(f"Unexpected error during data preparation: {e}") from e
 
 
 def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str) -> None:
     """Merge base model with adapter weights and save the result.
 
     Args:
-        cfg (DictConfig): Configuration object
-        steps (int): Training step number for checkpoint selection
-        save_path (str): Path to save merged model
+        cfg: Configuration object.
+        steps: Training step number for checkpoint selection.
+        save_path: Path to save merged model.
+
+    Raises:
+        ModelLoadingError: If model loading fails.
+        ConversionError: If model merging or saving fails.
     """
-    model_path = cfg.model.model_name
-    adapter_path = f"{cfg.model.new_model}/checkpoint-{steps}"
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path, torch_dtype="auto", device_map="auto"
-    )
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = PeftModel.from_pretrained(model, adapter_path)
-    model = model.merge_and_unload()
+    try:
+        model_path = cfg.model.model_name
+        adapter_path = f"{cfg.model.new_model}/checkpoint-{steps}"
 
-    model.save_pretrained(save_path)
-    tokenizer.save_pretrained(save_path)
-    del model
-    gc.collect()
-    torch.cuda.empty_cache()
-    logging.info("Model merged")
+        # Load base model
+        try:
+            if cfg.model.model_type == "gemma":
+                base_model = Gemma3ForCausalLM.from_pretrained(
+                    model_path,
+                    device_map="auto",
+                    torch_dtype="auto",
+                )
+            else:
+                base_model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    device_map="auto",
+                    torch_dtype="auto",
+                )
+        except Exception as e:
+            raise ModelLoadingError(f"Failed to load base model {model_path}: {e}") from e
+
+        # Load tokenizer
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            base_model.resize_token_embeddings(len(tokenizer))
+        except Exception as e:
+            raise ModelLoadingError(f"Failed to load tokenizer for {model_path}: {e}") from e
+
+        # Load and merge adapter
+        try:
+            peft_model = PeftModel.from_pretrained(cast(Any, base_model), adapter_path)
+            merged_model = cast(nn.Module, peft_model.merge_and_unload())  # type: ignore[assignment]
+        except Exception as e:
+            raise ConversionError(
+                f"Failed to load and merge adapter from {adapter_path}: {e}",
+            ) from e
+
+        # Save merged model
+        try:
+            merged_model.save_pretrained(save_path)  # type: ignore[attr-defined]
+            tokenizer.save_pretrained(save_path)
+        except Exception as e:
+            raise ConversionError(f"Failed to save merged model to {save_path}: {e}") from e
+        finally:
+            # Clean up resources
+            if "merged_model" in locals():
+                del merged_model
+            if "peft_model" in locals():
+                del peft_model
+            if "base_model" in locals():
+                del base_model
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        logging.info("Model merged")
+    except (ModelLoadingError, ConversionError):
+        raise
+    except Exception as e:
+        raise ConversionError(f"Unexpected error during model merging: {e}") from e
 
 
-def train(cfg: DictConfig) -> dict[str, int | Any]:
-    """Execute full training pipeline.
+def setup_model_and_tokenizer(cfg: DictConfig) -> tuple[ModelType, AutoTokenizer]:
+    """Set up model and tokenizer with quantization config.
 
     Args:
-        cfg (DictConfig): Configuration object
+        cfg: Configuration object.
 
     Returns:
-        int: Number of global training steps completed
+        Tuple of (model, tokenizer).
+
+    Raises:
+        ModelLoadingError: If model or tokenizer loading fails.
+        ConfigurationError: If model configuration is invalid.
     """
-    tokens_init(cfg)
-    torch_dtype = (
-        getattr(torch, cfg.model.torch_dtype)
-        if isinstance(cfg.model.torch_dtype, str)
-        else cfg.model.torch_dtype
-    )
-    if not cfg.model.quant.use_8bit:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch_dtype,
-            bnb_4bit_use_double_quant=True,
+    try:
+        torch_dtype = (
+            getattr(torch, cfg.model.torch_dtype)
+            if isinstance(cfg.model.torch_dtype, str)
+            else cfg.model.torch_dtype
         )
-    else:
-        bnb_config = BitsAndBytesConfig(
-            load_in_8bit=True,
-            llm_int8_threshold=6.0,
-            torch_dtype=torch_dtype,
-        )
-    model = AutoModelForCausalLM.from_pretrained(
-        cfg.model.model_name,
-        quantization_config=bnb_config,
-        device_map="auto",
-        use_cache=False,
-    )
-    logging.info("Model loaded")
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model.model_name)
-    tokenizer.padding_side = "right"
-    if tokenizer.pad_token is None or tokenizer.pad_token_id is None:
-        tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
-        tokenizer.pad_token = "<|pad|>"
-        if tokenizer.pad_token_id is None:
-            tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(
-                tokenizer.pad_token
+    except AttributeError as e:
+        raise ConfigurationError(
+            f"Invalid torch_dtype: {cfg.model.torch_dtype}. "
+            f"Must be one of: float16, bfloat16, float32",
+        ) from e
+
+    try:
+        if cfg.model.quant.enabled:
+            if not cfg.model.quant.use_8bit:
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch_dtype,
+                    bnb_4bit_use_double_quant=True,
+                )
+            else:
+                bnb_config = BitsAndBytesConfig(
+                    load_in_8bit=True,
+                    llm_int8_threshold=6.0,
+                    torch_dtype=torch_dtype,
+                )
+        else:
+            bnb_config = None
+
+        if cfg.model.model_type == "gemma":
+            model = Gemma3ForCausalLM.from_pretrained(
+                cfg.model.model_name,
+                quantization_config=bnb_config,
+                device_map="auto",
+                attn_implementation=cfg.model.attn_implementation,
+                use_cache=False,
             )
-    model.resize_token_embeddings(len(tokenizer))
-    peft_config = LoraConfig(
-        r=cfg.model.lora.r,
-        lora_alpha=cfg.model.lora.alpha,
-        lora_dropout=cfg.model.lora.dropout,
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=[
-            "up_proj",
-            "down_proj",
-            "gate_proj",
-            "k_proj",
-            "q_proj",
-            "v_proj",
-            "o_proj",
-        ],
-        modules_to_save=["lm_head"],
-        inference_mode=False,
-    )
-    model = get_peft_model(model, peft_config)
-    train_data, val_data = data_preparation(cfg, tokenizer)
-    logging.info("Data prepared")
-    global_steps = 0
-    eval_loss = 0.0
-    if cfg.training.use_sft:
+        elif cfg.model.model_type == "gemma3n":
+            # TODO: Implement Gemma3n support when available
+            raise ConfigurationError("Gemma3n model type not yet implemented")
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                cfg.model.model_name,
+                quantization_config=bnb_config,
+                device_map="auto",
+                attn_implementation=cfg.model.attn_implementation,
+                use_cache=False,
+            )
+    except Exception as e:
+        raise ModelLoadingError(f"Failed to load model {cfg.model.model_name}: {e}") from e
+
+    logging.info("Model loaded")
+
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(cfg.model.model_name)
+        tokenizer.padding_side = "right"
+        if tokenizer.pad_token is None or tokenizer.pad_token_id is None:
+            tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
+            tokenizer.pad_token = "<|pad|>"
+            if tokenizer.pad_token_id is None:
+                tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(tokenizer.pad_token)
+        model.resize_token_embeddings(len(tokenizer))
+    except Exception as e:
+        raise ModelLoadingError(
+            f"Failed to load tokenizer for {cfg.model.model_name}: {e}",
+        ) from e
+
+    return model, tokenizer
+
+
+def run_sft_training(
+    model: ModelType,
+    tokenizer: AutoTokenizer,
+    cfg: DictConfig,
+    train_data: Dataset,
+    val_data: Dataset,
+) -> tuple[int, float]:
+    """Run SFT training phase.
+
+    Args:
+        model: The model to train.
+        tokenizer: The tokenizer.
+        cfg: Configuration object.
+        train_data: Training dataset.
+        val_data: Validation dataset.
+
+    Returns:
+        Tuple of (global_steps, eval_loss).
+
+    Raises:
+        TrainingError: If SFT training fails.
+        ConfigurationError: If training configuration is invalid.
+    """
+    try:
+        peft_config = LoraConfig(
+            r=cfg.model.lora.r,
+            lora_alpha=cfg.model.lora.alpha,
+            lora_dropout=cfg.model.lora.dropout,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=[
+                "up_proj",
+                "down_proj",
+                "gate_proj",
+                "k_proj",
+                "q_proj",
+                "v_proj",
+                "o_proj",
+            ],
+            modules_to_save=["lm_head"],
+            inference_mode=False,
+        )
+    except Exception as e:
+        raise ConfigurationError(f"Failed to create LoRA configuration: {e}") from e
+
+    logging.info("Starting SFT training phase...")
+
+    # Create custom optimizer if enabled
+    custom_optimizer = None
+    try:
+        custom_optimizer = create_optimizer(model, cfg)
+        if custom_optimizer is not None:
+            logging.info("Using custom optimizer for SFT training")
+        else:
+            logging.info("Using default optimizer for SFT training")
+    except Exception as e:
+        raise ConfigurationError(f"Failed to create custom optimizer: {e}") from e
+
+    # Get the appropriate report_to backend based on configuration
+    try:
+        report_to_backend = get_report_to_backend(cfg)
+    except Exception as e:
+        raise ConfigurationError(f"Failed to configure logging backend: {e}") from e
+
+    # Get optimizer configuration updates for custom optimizers
+    optimizer_config_updates = get_optimizer_config_updates(cfg)
+
+    try:
+        # Apply optimizer configuration updates
+        optim_name = optimizer_config_updates.get("optim", cfg.training.optim)
+
         sft_config = SFTConfig(
             output_dir=cfg.model.new_model,
-            max_seq_length=cfg.training.max_seq_length,
+            max_length=cfg.training.max_seq_length,
             dataset_kwargs={"skip_prepare_dataset": True},
             packing=False,
             run_name=cfg.model.new_model,
@@ -274,8 +689,7 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
             per_device_eval_batch_size=cfg.training.per_device_eval_batch_size,
             gradient_accumulation_steps=cfg.training.gradient_accumulation_steps,
             gradient_checkpointing=cfg.training.gradient_checkpointing,
-            # max_steps=cfg.model.train_steps,
-            optim=cfg.training.optim,
+            optim=optim_name,  # Use potentially updated optimizer name
             num_train_epochs=cfg.training.num_train_epochs,
             eval_strategy="steps",
             eval_steps=cfg.training.eval_steps,
@@ -289,147 +703,807 @@ def train(cfg: DictConfig) -> dict[str, int | Any]:
             neftune_noise_alpha=cfg.training.neftune_noise_alpha,
             gradient_checkpointing_kwargs={"use_reentrant": False},
             group_by_length=True,
-            report_to="wandb",
+            report_to=report_to_backend,  # Use dynamic backend selection
             save_total_limit=cfg.training.save_total_limit,
             load_best_model_at_end=cfg.training.load_best,
         )
         if cfg.training.use_optuna_optimize:
             sft_config.run_name = f"{sft_config.run_name}_optuna"
+    except Exception as e:
+        raise ConfigurationError(f"Failed to create SFT configuration: {e}") from e
 
-        trainer = SFTTrainer(
-            model=model,
-            train_dataset=train_data,
-            eval_dataset=val_data,
-            peft_config=peft_config,
-            processing_class=tokenizer,
-            args=sft_config,
-        )
+    # Run SFT training inside its own try/except/finally so resources are cleaned
+    global_steps = 0
+    eval_loss = float("nan")
+    trainer = None
+    try:
+        # Create SFTTrainer with custom optimizer support
+        trainer_kwargs = {
+            "model": cast(nn.Module, model),
+            "train_dataset": train_data,
+            "eval_dataset": val_data,
+            "peft_config": peft_config,
+            "processing_class": cast(PreTrainedTokenizerBase, tokenizer),
+            "args": sft_config,
+        }
+
+        # Add custom optimizer if available
+        if custom_optimizer is not None:
+            trainer_kwargs["optimizers"] = (
+                custom_optimizer,
+                None,
+            )  # (optimizer, lr_scheduler)
+
+        trainer = SFTTrainer(**trainer_kwargs)
         trainer.train()
-        global_steps: int = trainer.state.global_step
+        global_steps = trainer.state.global_step
         eval_results = trainer.evaluate()
-        eval_loss = eval_results["eval_loss"]
-        logging.info(f"Evaluation loss: {eval_loss}")
-    if cfg.training.use_grpo:
-        grpo_train(
-            model=model,
-            tokenizer=tokenizer,
-            cfg=cfg,
-            data_preparing_func=None,
+        eval_loss = eval_results.get("eval_loss", float("nan"))
+        logging.info(
+            f"SFT completed. Global steps: {global_steps}, Evaluation loss: {eval_loss}",
         )
-    if not cfg.training.use_grpo and not cfg.training.use_sft:
-        logging.warning("Model training not configured")
-    else:
-        logging.info("Model trained")
+    except Exception as e:
+        raise TrainingError(f"SFT training failed: {e}") from e
+    finally:
+        # Clean up SFT trainer to free memory before next training phase
+        # Remove trainer if present
+        with contextlib.suppress(NameError):
+            if trainer is not None:
+                del trainer
+        gc.collect()
+        # Best-effort GPU cache cleanup; ignore errors.
+        with contextlib.suppress(Exception):
+            torch.cuda.empty_cache()
 
-    merged_model = model.merge_and_unload()
-    merged_model.save_pretrained(cfg.paths.output_dir)
-    tokenizer.save_pretrained(cfg.paths.output_dir)
-    logging.info("Model saved")
-    del model, merged_model
-    gc.collect()
-    torch.cuda.empty_cache()
-    return {"global_steps": global_steps, "eval_loss": eval_loss}
+    return global_steps, eval_loss
+
+
+def train(cfg: DictConfig) -> TrainingResult:
+    """Execute full training pipeline.
+
+    Args:
+        cfg: Configuration object.
+
+    Returns:
+        A TrainingResult dict with 'global_steps' and 'eval_loss'.
+
+    Raises:
+        TrainingError: If any training phase fails.
+        ConfigurationError: If training configuration is invalid.
+        ModelLoadingError: If model setup fails.
+        DataProcessingError: If data preparation fails.
+    """
+    from .exceptions import ConfigurationError, TrainingError
+    from .types import TrainingResult
+
+    try:
+        model, tokenizer = setup_model_and_tokenizer(cfg)
+        train_data, val_data = data_preparation(cfg, tokenizer)
+        logging.info("Data prepared")
+
+        # Initialize training state tracking
+        global_steps = 0
+        eval_loss = 0.0
+        training_completed = False
+
+        # Validate training configuration
+        if not cfg.training.use_grpo and not cfg.training.use_sft and not cfg.training.use_dpo:
+            raise ConfigurationError(
+                "No training method enabled. Please set at least one of: "
+                "training.use_sft, training.use_grpo, or training.use_dpo",
+            )
+
+        # Phase 1: Supervised Fine-Tuning (SFT)
+        if cfg.training.use_sft:
+            try:
+                global_steps, eval_loss = run_sft_training(
+                    model,
+                    tokenizer,
+                    cfg,
+                    train_data,
+                    val_data,
+                )
+                training_completed = True
+            except Exception as e:
+                raise TrainingError(f"SFT training phase" f" failed: {e}") from e
+
+        # Phase 2: Group Relative Policy Optimization (GRPO)
+        if cfg.training.use_grpo:
+            logging.info("Starting GRPO training phase...")
+
+            try:
+                # If both SFT and GRPO are enabled, load the best checkpoint from SFT
+                if cfg.training.use_sft and training_completed:
+                    logging.info("Loading SFT checkpoint for GRPO training...")
+                    checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
+                    if checkpoint_path.exists():
+                        # Load the adapter weights into a temporary model to avoid
+                        # rebinding the main `model` variable to a different type.
+                        peft_checkpoint_model = PeftModel.from_pretrained(
+                            cast(Any, model),
+                            str(checkpoint_path),
+                        )
+                        model = cast(Any, peft_checkpoint_model)
+                        logging.info(f"Loaded SFT checkpoint from {checkpoint_path}")
+                    else:
+                        logging.warning(
+                            f"SFT checkpoint not found at {checkpoint_path}, "
+                            "continuing with current model state",
+                        )
+
+                grpo_steps = grpo_train(
+                    model=cast(Any, model),
+                    tokenizer=tokenizer,
+                    cfg=cfg,
+                    data_preparing_func=None,
+                )
+
+                # Update global steps if GRPO was the only training method or ran after SFT
+                if not cfg.training.use_sft:
+                    global_steps = grpo_steps
+                else:
+                    # If both SFT and GRPO ran, use GRPO steps as the final checkpoint
+                    global_steps = grpo_steps
+
+                logging.info(f"GRPO completed. Final global steps: {global_steps}")
+                training_completed = True
+            except Exception as e:
+                raise TrainingError(f"GRPO training phase failed: {e}") from e
+
+        # Phase 3: Direct Preference Optimization (DPO)
+        if cfg.training.use_dpo:
+            logging.info("Starting DPO training phase...")
+
+            try:
+                # If previous training phases completed, load the best checkpoint
+                if training_completed:
+                    logging.info("Loading previous checkpoint for DPO training...")
+                    checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
+                    if checkpoint_path.exists():
+                        # Load the adapter weights into a temporary model to avoid
+                        # rebinding the main `model` variable to a different type.
+                        peft_checkpoint_model = PeftModel.from_pretrained(
+                            cast(Any, model),
+                            str(checkpoint_path),
+                        )
+                        model = cast(Any, peft_checkpoint_model)
+                        logging.info(f"Loaded checkpoint from {checkpoint_path}")
+                    else:
+                        logging.warning(
+                            f"Checkpoint not found at {checkpoint_path}, "
+                            "continuing with current model state",
+                        )
+
+                # Prepare reference model if specified
+                ref_model = None
+                if getattr(cfg.dpo, "use_ref_model", False):
+                    ref_model_name = getattr(cfg.dpo, "ref_model_name", cfg.model.model_name)
+                    logging.info(f"Loading reference model: {ref_model_name}")
+                    # Load reference model with same configuration as the main model
+                    try:
+                        torch_dtype = (
+                            getattr(torch, cfg.model.torch_dtype)
+                            if isinstance(cfg.model.torch_dtype, str)
+                            else cfg.model.torch_dtype
+                        )
+                        if cfg.model.model_type == "gemma":
+                            ref_model = Gemma3ForCausalLM.from_pretrained(
+                                ref_model_name,
+                                device_map="auto",
+                                torch_dtype=torch_dtype,
+                            )
+                        else:
+                            ref_model = AutoModelForCausalLM.from_pretrained(
+                                ref_model_name,
+                                device_map="auto",
+                                torch_dtype=torch_dtype,
+                            )
+                    except Exception as e:
+                        raise TrainingError(
+                            f"Failed to load reference model {ref_model_name}: {e}",
+                        ) from e
+
+                dpo_steps = dpo_train(
+                    model=cast(Any, model),
+                    tokenizer=tokenizer,
+                    cfg=cfg,
+                    data_preparing_func=None,
+                    ref_model=ref_model,
+                )
+
+                # Update global steps - DPO is the final training phase
+                global_steps = dpo_steps
+                logging.info(f"DPO completed. Final global steps: {global_steps}")
+                training_completed = True
+
+                # Clean up reference model if it was loaded
+                if ref_model is not None:
+                    del ref_model
+                    gc.collect()
+                    torch.cuda.empty_cache()
+            except Exception as e:
+                raise TrainingError(f"DPO training phase failed: {e}") from e
+
+        # Validate training completion
+        if not training_completed:
+            raise TrainingError("Training was configured but did not complete successfully")
+
+        logging.info("Model training completed successfully")
+
+        # Merge adapter weights from the final checkpoint
+        try:
+            final_checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
+            if final_checkpoint_path.exists():
+                merge_adapter_from_checkpoint(
+                    base_model_name=cfg.model.model_name,
+                    adapter_dir=str(final_checkpoint_path),
+                    save_path=cfg.paths.output_dir,
+                    device="cpu",
+                )
+                logging.info(f"Model merged from checkpoint: {final_checkpoint_path}")
+            else:
+                logging.error(f"Final checkpoint not found at {final_checkpoint_path}")
+                # Still try to save the model in its current state
+                merge_adapter_from_checkpoint(
+                    base_model_name=cfg.model.model_name,
+                    adapter_dir=cfg.model.new_model,  # Fallback to the output directory
+                    save_path=cfg.paths.output_dir,
+                    device="cpu",
+                )
+        except Exception as e:
+            raise TrainingError(f"Failed to merge and save final model: {e}") from e
+        finally:
+            # Clean up model resources
+            logging.info("Model saved")
+            if "model" in locals():
+                del model
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        return TrainingResult(global_steps=global_steps, eval_loss=eval_loss)
+
+    except (TrainingError, ConfigurationError, ModelLoadingError, DataProcessingError):
+        raise
+    except Exception as e:
+        raise TrainingError(f"Unexpected error during training pipeline: {e}") from e
+
+
+def merge_adapter_from_checkpoint(
+    base_model_name: str,
+    adapter_dir: str | Path,
+    save_path: str | Path,
+    device: str = "cpu",
+) -> None:
+    """Merge a LoRA adapter checkpoint into the base model and save merged HF model.
+
+    Args:
+        base_model_name: HF model identifier or local path to base model.
+        adapter_dir: Directory containing the PEFT adapter (e.g. checkpoints).
+        save_path: Directory where merged model will be saved.
+        device: Device to load model on; use 'cpu' to conserve GPU memory.
+
+    Raises:
+        ModelLoadingError: If model or tokenizer loading fails.
+        ConversionError: If adapter merging or model saving fails.
+    """
+    try:
+        # Load base model on CPU to avoid GPU OOM, then attach adapter
+        try:
+            base_model = AutoModelForCausalLM.from_pretrained(
+                base_model_name,
+                device_map={"": device} if device != "auto" else "auto",
+                torch_dtype=torch.float16 if device != "cpu" else torch.float32,
+            )
+        except Exception as e:
+            raise ModelLoadingError(f"Failed to load base model {base_model_name}: {e}") from e
+
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+        except Exception as e:
+            raise ModelLoadingError(
+                f"Failed to load tokenizer for {base_model_name}: {e}",
+            ) from e
+
+        try:
+            peft_model = PeftModel.from_pretrained(
+                cast(nn.Module, base_model),
+                adapter_dir,
+                device_map={"": device},
+            )
+        except Exception as e:
+            raise ConversionError(
+                f"Failed to load PEFT adapter from {adapter_dir}: {e}",
+            ) from e
+
+        try:
+            # Merge LoRA weights into base weights and free adapter memory
+            # Cast peft_model to Any before calling merge_and_unload so the
+            # Static analyzer does not confuse the return type with a Tensor.
+            merged_model = cast(nn.Module, cast(Any, peft_model).merge_and_unload())  # type: ignore[assignment]
+            # merged_model is a model instance; save_pretrained is expected on
+            # PreTrainedModel-like objects. Use a suppress block for optional
+            # save behavior if the merged model doesn't implement it.
+            with contextlib.suppress(Exception):
+                merged_model.save_pretrained(save_path)  # type: ignore[attr-defined]
+            tokenizer.save_pretrained(save_path)
+        except Exception as e:
+            raise ConversionError(f"Failed to merge and save model to {save_path}: {e}") from e
+
+    except (ModelLoadingError, ConversionError):
+        raise
+    except Exception as e:
+        raise ConversionError(
+            f"Unexpected error during adapter checkpoint merging: {e}",
+        ) from e
 
 
 def convert_to_gguf(
-    model_path: str,
-    outfile: str,
-    python_exe: str,
+    model_path: str | Path,
+    outfile: str | Path,
+    python_exe: str | Path,
     outtype: str,
     cfg: DictConfig,
 ) -> None:
     """Convert Hugging Face model to GGUF format.
 
     Args:
-        model_path (str): Path to input model directory
-        outfile (str): Output file path
-        python_exe (str): Python executable path
-        outtype (str): Output type specification
-        cfg (DictConfig): Configuration object
+        model_path: Path to input model directory.
+        outfile: Output file path.
+        python_exe: Python executable path.
+        outtype: Output type specification.
+        cfg: Configuration object.
 
     Raises:
-        FileNotFoundError: If required paths are missing
+        FileNotFoundError: If required paths are missing.
+        ConversionError: If GGUF conversion fails.
     """
     try:
-        llama_cpp_dir = os.path.abspath(cfg.paths.llama_cpp_dir)
-        conversion_script = os.path.join(llama_cpp_dir, "convert_hf_to_gguf.py")
+        llama_cpp_dir = Path(cfg.paths.llama_cpp_dir).resolve()
+        conversion_script = llama_cpp_dir / "convert_hf_to_gguf.py"
 
-        if not os.path.isdir(llama_cpp_dir):
+        if not llama_cpp_dir.is_dir():
             raise FileNotFoundError(f"llama.cpp directory not found: {llama_cpp_dir}")
-        if not os.path.exists(conversion_script):
+        if not conversion_script.exists():
             raise FileNotFoundError(f"Conversion script missing: {conversion_script}")
 
-        model_path = os.path.normpath(os.path.abspath(model_path))
-        outfile = os.path.normpath(os.path.abspath(outfile))
-        python_exe = os.path.normpath(cfg.paths.venv_python_path)
+        model_path_str = str(Path(model_path).resolve())
+        outfile_str = str(Path(outfile).resolve())
+        python_exe_str = str(Path(cfg.paths.venv_python_path))
 
         subprocess.run(
             [
-                python_exe,
-                conversion_script,
-                model_path,
+                python_exe_str,
+                str(conversion_script),
+                model_path_str,
                 "--outfile",
-                outfile,
+                outfile_str,
                 "--outtype",
                 outtype,
             ],
             check=True,
-            cwd=llama_cpp_dir,
+            cwd=str(llama_cpp_dir),
         )
-    except subprocess.CalledProcessError:
-        logging.error(
+    except subprocess.CalledProcessError as e:
+        error_msg = (
             f"GGUF conversion failed. Check:\n"
             f"- llama.cpp exists at {cfg.paths.llama_cpp_dir}\n"
-            f"- Conversion script exists: {os.path.join(cfg.paths.llama_cpp_dir, 'convert_hf_to_gguf.py')}\n"
+            f"- Conversion script exists: "
+            f"{Path(cfg.paths.llama_cpp_dir) / 'convert_hf_to_gguf.py'}\n"
             f"- Python executable: {python_exe}\n"
             f"- Model path: {model_path}"
         )
+        logging.exception(error_msg)
+        raise ConversionError(
+            f"GGUF conversion subprocess failed with exit code {e.returncode}",
+        ) from e
+    except FileNotFoundError:
+        raise
+    except Exception as e:
+        raise ConversionError(f"Unexpected error during GGUF conversion: {e}") from e
+
+
+def convert_to_rkllm(
+    model_path: str | Path,
+    output_dir: str | Path,
+    target_platform: str = "rk3588",
+    quantization: str = "w8a8",
+    do_parallelize: bool = False,
+    hybrid_quantization: bool = False,
+    num_npu_core: int = 1,
+    max_context: int = 4096,
+) -> str:
+    """Convert Hugging Face model to RKLLM format using dedicated RKLLM container.
+
+    Args:
+        model_path: Path to input Hugging Face model directory or GGUF file.
+        output_dir: Directory to save RKLLM model.
+        target_platform: Target Rockchip platform (rk3588, rk3576, etc.).
+        quantization: Quantization type (w8a8, w4a16, w4a16_g128).
+        do_parallelize: Enable model parallelization for larger models.
+        hybrid_quantization: Enable hybrid quantization.
+        num_npu_core: Number of NPU cores to use (1-3).
+        max_context: Maximum context length.
+
+    Returns:
+        Path to the generated RKLLM model file.
+
+    Raises:
+        RuntimeError: If RKLLM conversion fails.
+        ImportError: If RKLLM container is not available.
+    """
+    import subprocess
+    from pathlib import Path
+
+    # Validate configuration before proceeding
+    validate_rkllm_config_params(target_platform, quantization, num_npu_core)
+
+    # Create output directory
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Generate output filename based on configuration
+    model_name = Path(model_path).name
+    output_filename = f"{model_name}_{target_platform}_{quantization}.rkllm"
+    output_file_path = output_path / output_filename
+
+    # Convert paths to absolute paths for Docker mounting
+    abs_model_path = Path(model_path).resolve()
+    abs_output_dir = output_path.resolve()
+
+    logging.info("Converting model to RKLLM format using dedicated container...")
+    logging.info(f"  Source: {abs_model_path}")
+    logging.info(f"  Target platform: {target_platform}")
+    logging.info(f"  Quantization: {quantization}")
+    logging.info(f"  Output: {output_file_path}")
+
+    try:
+        # Check if RKLLM container is available
+        check_cmd = ["docker", "images", "-q", "rkllm_converter"]
+        result = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+
+        if not result.stdout.strip():
+            # Try to build the RKLLM container if it doesn't exist
+            logging.warning("RKLLM container not found, attempting to build...")
+
+            # Build from the rkllm_files directory context
+            rkllm_files_path = Path("rkllm_files").resolve()
+            build_cmd = [
+                "docker",
+                "build",
+                "-f",
+                str(rkllm_files_path / "Dockerfile.rkllm"),
+                "-t",
+                "rkllm_converter",
+                str(rkllm_files_path),
+            ]
+
+            build_result = subprocess.run(
+                build_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            if build_result.returncode != 0:
+                raise ImportError(
+                    f"RKLLM container build failed. "
+                    f"Please build the RKLLM container first:\n"
+                    f"docker build -f rkllm_files/Dockerfile.rkllm -t "
+                    f"rkllm_converter rkllm_files/\n\n"
+                    f"Build error: {build_result.stderr}",
+                )
+
+            logging.info("RKLLM container built successfully")
+
+        # Auto-detect model format
+        model_format = "auto"
+        if abs_model_path.suffix.lower() == ".gguf":
+            model_format = "gguf"
+        elif abs_model_path.is_dir() and (abs_model_path / "config.json").exists():
+            model_format = "huggingface"
+
+        # Prepare Docker command for RKLLM conversion
+        docker_cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{abs_model_path}:/input",
+            "-v",
+            f"{abs_output_dir}:/output",
+            "rkllm_converter",
+            "convert",
+            "--model-path",
+            "/input",
+            "--output-path",
+            f"/output/{output_filename}",
+            "--target-platform",
+            target_platform,
+            "--quantization",
+            quantization,
+            "--num-npu-core",
+            str(num_npu_core),
+            "--model-format",
+            model_format,
+            "--max-context",
+            str(max_context),
+        ]
+
+        # Add optional parameters
+        if do_parallelize:
+            docker_cmd.append("--do-parallelize")
+        if hybrid_quantization:
+            docker_cmd.append("--hybrid-quantization")
+
+        logging.info(f"Running RKLLM conversion command: {' '.join(docker_cmd)}")
+
+        # Execute the conversion
+        result = subprocess.run(
+            docker_cmd,
+            capture_output=True,
+            text=True,
+            timeout=3600,  # 1 hour timeout
+            check=False,
+        )
+
+        # Log the output
+        if result.stdout:
+            logging.info(f"RKLLM conversion output:\n{result.stdout}")
+        if result.stderr:
+            logging.warning(f"RKLLM conversion stderr:\n{result.stderr}")
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"RKLLM conversion failed with exit code {result.returncode}.\n"
+                f"Command: {' '.join(docker_cmd)}\n"
+                f"Error output: {result.stderr}\n"
+                f"Standard output: {result.stdout}",
+            )
+
+        # Verify the output file exists
+        if not output_file_path.exists():
+            raise RuntimeError(f"RKLLM model file was not created: {output_file_path}")
+
+        file_size = output_file_path.stat().st_size / (1024 * 1024)  # Size in MB
+        logging.info("RKLLM conversion completed successfully")
+        logging.info(f"  Output file: {output_file_path}")
+        logging.info(f"  File size: {file_size:.2f} MB")
+
+        return str(output_file_path)
+
+    except subprocess.TimeoutExpired:
+        logging.error("RKLLM conversion timed out after 1 hour")
+        raise RuntimeError("RKLLM conversion timed out") from None
+    except Exception as e:
+        logging.exception(f"RKLLM conversion failed: {e}")
+        # Clean up partial files
+        if output_file_path.exists():
+            output_file_path.unlink()
+        raise RuntimeError(f"RKLLM conversion failed: {e}") from e
+
+
+def safe_import_rkllm() -> None:
+    """Safely import RKLLM with detailed diagnostics."""
+    diagnostic_info = []
+    import importlib
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    # Attempt dynamic import to avoid static analysis false-positives
+    try:
+        rkllm = importlib.import_module("rkllm")
+        path = getattr(rkllm, "__file__", "<unknown>")
+        diagnostic_info.append(f"✓ RKLLM package found at: {path}")
+    except Exception as e:  # ImportError or other import-time errors
+        diagnostic_info.append(f"✗ RKLLM package import failed: {e}")
+
+        # Check if rknn-toolkit2 is available
+        try:
+            rknn_toolkit2 = importlib.import_module("rknn_toolkit2")
+            diagnostic_info.append(
+                "✓ rknn-toolkit2 available: "
+                + str(getattr(rknn_toolkit2, "__version__", "<unknown>")),
+            )
+        except Exception:
+            diagnostic_info.append("✗ rknn-toolkit2 not found")
+
+        # Check pip-installed package presence using current interpreter
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "show",
+                    "rkllm-toolkit",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                diagnostic_info.append("✓ rkllm-toolkit package installed")
+                diagnostic_info.append(result.stdout[:500])  # Limit output
+            else:
+                diagnostic_info.append("✗ rkllm-toolkit package not found")
+        except Exception as subprocess_error:
+            diagnostic_info.append(f"✗ Failed to check installation: {subprocess_error}")
+
+        # Check if installation log exists in a portable temp directory
+        log_file = os.path.join(tempfile.gettempdir(), "rkllm_install.log")
+        if os.path.exists(log_file):
+            try:
+                with open(log_file) as f:
+                    log_content = f.read()[-1000:]  # Last 1000 characters
+                diagnostic_info.append("Recent installation log:")
+                diagnostic_info.append(log_content)
+            except Exception:
+                diagnostic_info.append("✗ Failed to read installation log")
+
+        msg = (
+            "RKLLM toolkit not available.\n"
+            "DIAGNOSTIC INFORMATION:\n"
+            + "\n".join(diagnostic_info)
+            + "\n\nSOLUTIONS:\n"
+            + "1. For Docker: Rebuild container with 'docker-compose build --no-cache'\n"
+            + "2. Check installation logs at "
+            + tempfile.gettempdir()
+            + os.sep
+            + "rkllm_install.log\n"
+            + "3. Verify network connectivity for downloading RKLLM toolkit\n"
+            + "4. For persistent issues, check GitHub "
+            "releases at https://github.com/airockchip/rknn-llm/releases"
+        )
+        raise ImportError(msg) from e
+
+    # Import RKLLM API dynamically
+    try:
+        rkllm_api = importlib.import_module("rkllm.api")
+        rkllm_class = rkllm_api.RKLLM
+        diagnostic_info.append("✓ RKLLM.api import successful")
+        return rkllm_class
+    except Exception as e:
+        diagnostic_info.append(f"✗ RKLLM.api import failed: {e}")
+        raise ImportError(
+            "RKLLM API not available.\n"
+            "DIAGNOSTIC INFORMATION:\n" + "\n".join(diagnostic_info),
+        ) from e
+
+
+def validate_rkllm_config_params(
+    target_platform: str,
+    quantization: str,
+    num_npu_core: int,
+) -> None:
+    """Validate RKLLM configuration parameters."""
+    # Validate platform
+    valid_platforms = ["rk3588", "rk3576", "rk3566", "rk3568"]
+    if target_platform not in valid_platforms:
+        raise ValueError(
+            f"Invalid target_platform: {target_platform}. "
+            f"Valid options: {valid_platforms}",
+        )
+
+    # Validate quantization
+    valid_quantizations = ["w8a8", "w4a16", "w4a16_g128"]
+    if quantization not in valid_quantizations:
+        raise ValueError(
+            f"Invalid quantization: {quantization}. " f"Valid options: {valid_quantizations}",
+        )
+
+    # Validate NPU core count
+    if not (1 <= num_npu_core <= 3):
+        raise ValueError(f"Invalid num_npu_core: {num_npu_core}. " "Must be between 1 and 3")
+
+    logging.info("✓ RKLLM configuration parameters validated successfully")
+
+
+def rkllm_quantize(
+    model_path: str | Path,
+    output_path: str | Path,
+    quantization: str = "w8a8",
+    target_platform: str = "rk3588",
+    **kwargs: dict,
+) -> bool:
+    """Quantize model for RKLLM format (integrated within convert_to_rkllm).
+
+    This function is a wrapper that calls convert_to_rkllm with quantization.
+    The actual quantization is performed during the RKLLM conversion process.
+
+    Args:
+        model_path: Path to input model.
+        output_path: Path for quantized output.
+        quantization: Quantization type (w8a8, w4a16, w4a16_g128).
+        target_platform: Target Rockchip platform.
+        **kwargs: Additional parameters for convert_to_rkllm.
+
+    Returns:
+        True if quantization succeeded, False otherwise.
+
+    Raises:
+        ConversionError: If RKLLM quantization fails.
+    """
+    try:
+        output_dir = Path(output_path).parent
+        result_path = convert_to_rkllm(
+            model_path=model_path,
+            output_dir=str(output_dir),
+            target_platform=target_platform,
+            quantization=quantization,
+            **kwargs,
+        )
+
+        # If output filename is different, rename the file
+        result_path_obj = Path(result_path)
+        output_path_obj = Path(output_path)
+        if result_path_obj != output_path_obj and result_path_obj.exists():
+            shutil.move(str(result_path_obj), str(output_path_obj))
+            logging.info(f"RKLLM model moved to: {output_path}")
+
+        return True
+
+    except Exception as e:
+        logging.exception(f"RKLLM quantization failed: {e}")
+        raise ConversionError(f"RKLLM quantization failed: {e}") from e
 
 
 def quantize_model(
-    model_path: str,
-    outfile: str,
+    model_path: str | Path,
+    outfile: str | Path,
     qtype: str = "q4_0",
-    llama_cpp_path: str = ".",
-    quantized_path: str = "llama-quantize.exe",
+    llama_cpp_path: str | Path = ".",
+    quantized_path: str | Path = "llama-quantize.exe",
 ) -> bool:
     """Quantize GGUF model using llama.cpp quantizer.
 
     Args:
-        model_path (str): Path to input GGUF model
-        outfile (str): Path for quantized output
-        qtype (str): Quantization type (default: q4_0)
-        llama_cpp_path (str): Path to llama.cpp directory
-        quantized_path (str): Name of quantizer executable
+        model_path: Path to input GGUF model.
+        outfile: Path for quantized output.
+        qtype: Quantization type (default: q4_0).
+        llama_cpp_path: Path to llama.cpp directory.
+        quantized_path: Name of quantizer executable.
 
     Returns:
-        bool: True if quantization succeeded, False otherwise
+        True if quantization succeeded, False otherwise.
+
+    Raises:
+        ConversionError: If quantization process fails.
     """
-    llama_cpp_dir = os.path.abspath(llama_cpp_path)
-    llama_quantize_path = os.path.join(llama_cpp_dir, quantized_path)
-    model_path = os.path.abspath(model_path)
-    outfile = os.path.abspath(outfile)
-    if not os.path.exists(llama_quantize_path):
-        logging.error(f"Error: llama-quantize.exe not found at {llama_quantize_path}")
-        return False
-
-    logging.info("Trying to quantize model...")
-    command = [llama_quantize_path, model_path, outfile, qtype]
-    logging.info(f"Running command: {command}")
     try:
-        process = subprocess.run(
-            command, check=True, capture_output=True, cwd=llama_cpp_dir
-        )
-        logging.info("Model quantized")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Command failed with exit code {e.returncode}")
-        return False
+        llama_cpp_dir = Path(llama_cpp_path).resolve()
+        llama_quantize_path = llama_cpp_dir / quantized_path
+        model_path_abs = Path(model_path).resolve()
+        outfile_abs = Path(outfile).resolve()
 
-    logging.info(f"Command output: {process.stdout.decode()}")
-    logging.info(
-        f"Command stderr: {process.stderr.decode() if process.stderr else 'No stderr output.'}"
-    )
-    return True
+        if not llama_quantize_path.exists():
+            error_msg = f"Error: llama-quantize.exe not found at {llama_quantize_path}"
+            logging.error(error_msg)
+            return False
+
+        logging.info("Trying to quantize model...")
+        command = [str(llama_quantize_path), str(model_path_abs), str(outfile_abs), qtype]
+        logging.info(f"Running command: {command}")
+
+        try:
+            process = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                cwd=str(llama_cpp_dir),
+            )
+            logging.info("Model quantized")
+            logging.info(f"Command output: {process.stdout.decode()}")
+            logging.info(
+                f"Command stderr: {process.stderr.decode() if process.stderr else 'None'}",
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            logging.exception(f"Command failed with exit code {e.returncode}")
+            return False
+    except Exception as e:
+        logging.exception(f"Quantization process failed: {e}")
+        return False
 
 
 def copy_data(
@@ -440,96 +1514,286 @@ def copy_data(
     """Move file to destination directory with versioning.
 
     Args:
-        file (str): Source file name
-        gguf_directory (str): Version subdirectory
-        destination (str): Root destination directory
+        file: Source file name.
+        gguf_directory: Version subdirectory.
+        destination: Root destination directory.
+
+    Raises:
+        ConversionError: If file copy operation fails.
     """
-    destination_path = os.path.join(destination, gguf_directory, file)
-    os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-    shutil.move(os.path.join(os.getcwd(), file), destination_path)
+    try:
+        destination_path = Path(destination) / gguf_directory / file
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path = Path.cwd() / file
+
+        if not source_path.exists():
+            raise ConversionError(f"Source file not found: {source_path}")
+
+        shutil.move(str(source_path), str(destination_path))
+        logging.info(f"File moved from {source_path} to {destination_path}")
+    except Exception as e:
+        raise ConversionError(f"Failed to copy file {file} to destination: {e}") from e
 
 
-def train_pipeline(cfg: DictConfig) -> Dict[str, Any]:
+def train_pipeline(cfg: DictConfig) -> dict[str, Any]:
     """Execute complete training pipeline including conversion and quantization.
 
     Args:
-        cfg (DictConfig): Configuration object
+        cfg: Configuration object.
+
+    Returns:
+        A dict with 'eval_loss'.
 
     Raises:
-        RuntimeError: If quantization step fails
+        TrainingError: If training pipeline fails.
+        ConversionError: If model conversion or quantization fails.
+        ExperimentTrackingError: If experiment logging fails.
     """
     try:
-        result = train(cfg)
-        steps = result["global_steps"]
-        eval_loss = result["eval_loss"]
+        # Initialize optional experiment logging backend (wandb / mlflow / none)
+        init_logging_backend(cfg)
 
-        with TemporaryDirectory() as merged_model_dir:
-            model_merge_for_converting(cfg, steps, merged_model_dir)
+        # Log system metrics at the start of the run (if MLflow enabled)
+        try:
+            from .logging_utils import log_system_metrics
 
-            outfile = cfg.model.outfile
+            log_system_metrics(cfg, prefix="start")
+        except Exception as e:
+            logger.warning(e)
 
-            convert_to_gguf(
-                model_path=merged_model_dir,
-                outfile=os.path.join(merged_model_dir, outfile),
-                python_exe=cfg.paths.venv_python_path,
-                outtype="f16",
-                cfg=cfg,
+        # Validate MLflow connection if MLflow backend is selected
+        if not validate_mlflow_connection(cfg):
+            logger.warning(
+                "MLflow connection validation failed, but continuing with training",
             )
-            logging.info(f"Converted to GGUF: {outfile}")
 
-            quantized_file = outfile
-            if quantize_model(
-                model_path=os.path.join(merged_model_dir, outfile),
-                outfile=quantized_file,
-                qtype=cfg.model.quant.qtype,
-                llama_cpp_path=os.path.abspath(cfg.paths.llama_cpp_dir),
-                quantized_path=cfg.paths.quantized_path,
-            ):
-                copy_data(
-                    quantized_file,
-                    cfg.model.quant.gguf_dir,
-                    cfg.paths.final_weights_path,
-                )
-                if os.path.exists(quantized_file):
-                    os.remove(quantized_file)
-                    logging.info(f"Removed intermediate file: {quantized_file}")
-            else:
-                raise RuntimeError("Quantization failed")
+        # Log training configuration to MLflow if enabled
+        try:
+            log_training_config(cfg)
+        except Exception as e:
+            raise ExperimentTrackingError(f"Failed to log training configuration: {e}") from e
+
+        try:
+            result = train(cfg)
+            merge_adapter_from_checkpoint(
+                base_model_name=cfg.model.model_name,
+                adapter_dir=str(
+                    Path(cfg.model.new_model) / f"checkpoint-{result['global_steps']}",
+                ),  # where trainer saved checkpoint-<steps>
+                save_path=cfg.paths.output_dir,
+                device="cpu",  # merge on CPU to avoid OOM
+            )
+            steps = result["global_steps"]
+            eval_loss = result["eval_loss"]
+        except Exception as e:
+            raise TrainingError(f"Training phase failed: {e}") from e
+
+        try:
+            with TemporaryDirectory() as merged_model_dir:
+                model_merge_for_converting(cfg, steps, merged_model_dir)
+
+                # GGUF conversion (optional based on config)
+                if cfg.model.quant.get(
+                    "convert_to_gguf",
+                    True,
+                ):  # Default to True for backward compatibility
+                    outfile = cfg.model.outfile
+
+                    try:
+                        convert_to_gguf(
+                            model_path=merged_model_dir,
+                            outfile=str(Path(merged_model_dir) / outfile),
+                            python_exe=cfg.paths.venv_python_path,
+                            outtype="f16",
+                            cfg=cfg,
+                        )
+                        logging.info(f"Converted to GGUF: {outfile}")
+                    except Exception as e:
+                        raise ConversionError(f"GGUF conversion failed: {e}") from e
+
+                    quantized_file = outfile
+                    if not quantize_model(
+                        model_path=str(Path(merged_model_dir) / outfile),
+                        outfile=quantized_file,
+                        qtype=cfg.model.quant.qtype,
+                        llama_cpp_path=str(Path(cfg.paths.llama_cpp_dir).resolve()),
+                        quantized_path=cfg.paths.quantized_path,
+                    ):
+                        raise ConversionError("Model quantization failed")
+
+                    try:
+                        copy_data(
+                            quantized_file,
+                            cfg.model.quant.gguf_dir,
+                            cfg.paths.final_weights_path,
+                        )
+                        quantized_file_path = Path(quantized_file)
+                        if quantized_file_path.exists():
+                            quantized_file_path.unlink()
+                            logging.info(f"Removed intermediate file: {quantized_file}")
+                    except Exception as e:
+                        logging.error(f"Failed to copy quantized file: {e}")
+                        raise ConversionError(f"Failed to copy quantized model: {e}") from e
+                else:
+                    # Alternative flow: copy merged HuggingFace model directly to output
+                    try:
+                        logging.info("GGUF conversion disabled, copying merged model directly")
+                        merged_output_dir = Path(cfg.paths.output_dir) / "merged_model"
+                        if merged_output_dir.exists():
+                            shutil.rmtree(merged_output_dir)
+                        shutil.copytree(merged_model_dir, merged_output_dir)
+                        logging.info(f"Merged model copied to: {merged_output_dir}")
+                    except Exception as e:
+                        raise ConversionError(f"Failed to copy merged model: {e}") from e
+
+                # RKLLM conversion (if enabled)
+                # if getattr(cfg.model, "rkllm", {}).get("enabled", False):
+                #     logging.info("Starting RKLLM conversion...")
+                #     try:
+                #         rkllm_config = cfg.model.rkllm
+                #         rkllm_output_dir = Path(cfg.paths.output_dir) /
+                #         rkllm_config.output_dir
+                #
+                #         rkllm_model_path = convert_to_rkllm(
+                #             model_path=cfg.paths.output_dir,
+                # Use the merged model directory
+                #             output_dir=str(rkllm_output_dir),
+                #             target_platform=rkllm_config.target_platform,
+                #             quantization=rkllm_config.quantization,
+                #             do_parallelize=rkllm_config.get("do_parallelize", False),
+                #             hybrid_quantization=rkllm_config.get("hybrid_quantization",
+                #             False),
+                #             num_npu_core=rkllm_config.get("num_npu_core", 1),
+                #         )
+                #
+                #         logging.info(f"RKLLM conversion completed: {rkllm_model_path}")
+                #
+                #     except Exception as e:
+                #         logging.exception(f"RKLLM conversion failed: {e}")
+                #         # Don't raise error - RKLLM conversion is optional
+                #         logging.info("Continuing without RKLLM conversion...")
+                # else:
+                #     logging.info("RKLLM conversion disabled in configuration")
+
+                # Log system metrics at the end of the pipeline
+                try:
+                    from .logging_utils import log_system_metrics
+
+                    log_system_metrics(cfg, prefix="end")
+                except Exception as e:
+                    # Non-fatal
+                    logger.warning(f"Failed to log system metrics: {e}")
+        except ConversionError:
+            raise
+        except Exception as e:
+            raise ConversionError(f"Model processing pipeline failed: {e}") from e
+
+        # Log training artifacts to MLflow if enabled
+        try:
+            log_training_artifacts(cfg, cfg.paths.output_dir, steps)
+            # Log evaluation metrics to MLflow if enabled
+            log_evaluation_metrics({"eval_loss": eval_loss, "global_steps": steps})
+        except Exception as e:
+            raise ExperimentTrackingError(
+                f"Failed to log training artifacts or metrics: {e}",
+            ) from e
 
         logging.info("Training pipeline completed")
         return {"eval_loss": eval_loss}
 
+    except (TrainingError, ConversionError, ExperimentTrackingError):
+        raise
+    except Exception as e:
+        raise TrainingError(f"Unexpected error in training pipeline: {e}") from e
     finally:
-        wandb.finish()
-        logging.info("Wandb finished")
+        # Finish/cleanup configured logging backend (if any)
+        try:
+            finish_logging_backend()
+        except Exception as e:
+            logging.warning(f"Failed to cleanup logging backend: {e}")
         gc.collect()
         torch.cuda.empty_cache()
 
 
-def main_train(data_dir: str, cfg: DictConfig) -> Dict[str, Any]:
+def main_train(data_dir: str, cfg: DictConfig) -> dict[str, Any]:
     """Main training entry point with dataset processing.
 
     Args:
-        data_dir (str): Directory containing training data
-        cfg (DictConfig): Configuration object
+        data_dir: Directory containing training data.
+        cfg: Configuration object.
+
+    Returns:
+        Result dictionary from training pipeline.
+
+    Raises:
+        TrainingError: If training pipeline fails.
+        DataProcessingError: If dataset processing fails.
     """
-    result = train_pipeline(cfg)
-    with open(os.path.join(data_dir, "test_ru.json"), "r", encoding="utf-8") as file:
-        test_dataset = json.load(file)
-    dataset_to_json(test_dataset, cfg.testing.output_test_file)
-    return result
+    try:
+        result = train_pipeline(cfg)
+
+        try:
+            test_file_path = Path(data_dir) / "test_ru.json"
+            if not test_file_path.exists():
+                raise DataProcessingError(f"Test dataset file not " f"found: {test_file_path}")
+
+            with test_file_path.open(encoding="utf-8") as file:
+                test_dataset = json.load(file)
+
+            dataset_to_json(
+                test_dataset,
+                cfg.testing.output_test_file,
+                cfg.data_preparation.method,
+            )
+        except json.JSONDecodeError as e:
+            raise DataProcessingError(f"Invalid JSON format in test dataset: {e}") from e
+        except Exception as e:
+            raise DataProcessingError(f"Failed to process test dataset: {e}") from e
+
+        return result
+
+    except (TrainingError, DataProcessingError):
+        raise
+    except Exception as e:
+        logging.error("Unexpected error in main training function")
+        raise TrainingError(f"Unexpected error in main training function: {e}") from e
 
 
 def post_new_dataset() -> None:
-    """Upload new dataset version to remote server."""
-    url = "https://dataset.ser13volk.me/dataset_ru"
-    with open(os.path.join("../data", "dataset_ru.json"), "rb") as f:
-        files = {"file": f}
-        response = requests.post(url, files=files, auth=HTTPBasicAuth("admin", ""))
-    logging.info(response.json())
+    """Upload new dataset version to remote server.
+
+    Raises:
+        DataProcessingError: If dataset upload fails.
+    """
+    _load_environment_if_needed()
+    password = os.getenv("PASSWORD_BOT")
+    if not password:
+        raise DataProcessingError("PASSWORD_BOT not set in environment")
+    try:
+        url = "https://dataset.ser13volk.me/dataset_ru"
+        dataset_path = Path("../data") / "dataset_ru.json"
+
+        if not dataset_path.exists():
+            raise DataProcessingError(f"Dataset file not found: {dataset_path}")
+
+        with dataset_path.open("rb") as f:
+            files = {"file": f}
+            response = requests.post(
+                url,
+                files=files,
+                auth=HTTPBasicAuth("admin", password),
+                timeout=30,
+            )
+
+        response.raise_for_status()  # Raises HTTPError for bad HTTP status codes
+        logging.info(response.json())
+
+    except requests.RequestException as e:
+        raise DataProcessingError(f"Failed to upload dataset to remote server: {e}") from e
+    except Exception as e:
+        raise DataProcessingError(f"Unexpected error during dataset upload: {e}") from e
 
 
 if __name__ == "__main__":
     configure_logging(logging.DEBUG)
-    main_train()
-    # post_new_dataset()
+    post_new_dataset()

@@ -1,9 +1,25 @@
 """File for configuring logging with colored output."""
+
 import logging
 from logging import Formatter, LogRecord, StreamHandler
-from typing import Dict
 
-LOG_COLORS: Dict[str, str] = {
+"""
+Enhanced logging configuration and utilities for LLM LoRa training framework.
+
+This module provides:
+- Centralized logging configuration with colored output
+- Named logger instances for better debugging
+- Utility functions for structured logging
+- Standardized training progress logging
+
+Usage:
+    from training_model.logging_config import configure_logging, get_logger
+
+    configure_logging(logging.DEBUG)
+    logger = get_logger(__name__)
+    logger.info("Module initialized")
+"""
+LOG_COLORS: dict[str, str] = {
     "DEBUG": "#4b8bf5",  # Light blue
     "INFO": "#2ecc71",  # Green
     "WARNING": "#f1c40f",  # Yellow
@@ -54,25 +70,122 @@ class ColoredFormatter(Formatter):
         return f"{color_code}{message}{RESET_COLOR}"
 
 
-def configure_logging(level: int = logging.INFO) -> None:
+def configure_logging(level: int | str = logging.INFO) -> None:
     """Configure root logger with colored output handler.
 
     Args:
-        level (int): Logging level to set (logging.INFO or logging.DEBUG).
+        level (int | str): Logging level to set. Can be:
+            - int: logging.INFO or logging.DEBUG
+            - str: "INFO", "DEBUG" (case insensitive)
             Defaults to logging.INFO.
 
     Raises:
-        ValueError: If level is not logging.INFO or logging.DEBUG
+        ValueError: If level is not a valid logging level
     """
+    # Convert string level to logging constant if needed
+    if isinstance(level, str):
+        level_str = level.upper()
+        if level_str == "INFO":
+            level = logging.INFO
+        elif level_str == "DEBUG":
+            level = logging.DEBUG
+        else:
+            raise ValueError(f"Invalid log level string: {level}. Use 'INFO' or 'DEBUG'")
+
+    # Validate integer levels
     if level != logging.INFO and level != logging.DEBUG:
-        raise ValueError("You can use only logging.info or logging.debug")
+        raise ValueError("You can use only logging.INFO or logging.DEBUG")
+
+    # Clear existing handlers to avoid duplicates
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
     handler = StreamHandler()
     handler.setFormatter(
         ColoredFormatter(
-            fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-        )
+            fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        ),
     )
 
-    logger = logging.getLogger()
-    logger.setLevel(level)
-    logger.addHandler(handler)
+    root_logger.setLevel(level)
+    root_logger.addHandler(handler)
+
+    # Suppress third-party library noise
+    logging.getLogger("transformers").setLevel(logging.WARNING)
+    logging.getLogger("torch").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+
+
+def get_logger(name: str) -> logging.Logger:
+    """Get a named logger instance.
+
+    Args:
+        name (str): Logger name, typically __name__ of the calling module
+
+    Returns:
+        logging.Logger: Configured logger instance
+    """
+    return logging.getLogger(name)
+
+
+def log_dict(
+    logger: logging.Logger,
+    data: dict,
+    level: int = logging.INFO,
+    prefix: str = "",
+) -> None:
+    """Log dictionary contents in a structured format.
+
+    Args:
+        logger: Logger instance to use
+        data: Dictionary to log
+        level: Log level to use
+        prefix: Optional prefix for the log message
+    """
+    if not data:
+        return
+
+    logger.log(level, f"{prefix}Configuration:" if prefix else "Configuration:")
+    for key, value in data.items():
+        if isinstance(value, dict):
+            logger.log(level, f"  {key}:")
+            for sub_key, sub_value in value.items():
+                logger.log(level, f"    {sub_key}: {sub_value}")
+        else:
+            logger.log(level, f"  {key}: {value}")
+
+
+def log_training_progress(
+    logger: logging.Logger,
+    step: int,
+    total_steps: int,
+    loss: float | None = None,
+    metrics: dict | None = None,
+) -> None:
+    """Log training progress in a standardized format.
+
+    Args:
+        logger: Logger instance to use
+        step: Current training step
+        total_steps: Total number of training steps
+        loss: Current loss value (optional)
+        metrics: Additional metrics dictionary (optional)
+    """
+    progress_pct = (step / total_steps) * 100 if total_steps > 0 else 0
+    base_msg = f"Step {step}/{total_steps} ({progress_pct:.1f}%)"
+
+    if loss is not None:
+        base_msg += f" - Loss: {loss:.4f}"
+
+    if metrics:
+        metric_strs = [
+            f"{k}: {v:.4f}" if isinstance(v, int | float) else f"{k}: {v}"
+            for k, v in metrics.items()
+        ]
+        if metric_strs:
+            base_msg += f" - {', '.join(metric_strs)}"
+
+    logger.info(base_msg)

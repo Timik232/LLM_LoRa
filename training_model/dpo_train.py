@@ -1,0 +1,274 @@
+"""File for training using DPO (Direct Preference Optimization) method"""
+
+import json
+import logging
+from collections.abc import Callable
+from pathlib import Path
+
+from datasets import Dataset
+from hydra.utils import get_original_cwd
+from omegaconf import DictConfig
+from peft import PeftModel
+from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
+from trl import DPOConfig, DPOTrainer
+
+from .logging_utils import get_report_to_backend
+from .memory_utils import comprehensive_memory_cleanup, log_memory_usage
+from .optimizer_factory import create_optimizer, get_optimizer_config_updates
+
+
+def validate_dpo_config(cfg: DictConfig) -> bool:
+    """Validate DPO configuration parameters.
+
+    Args:
+        cfg: Configuration object
+
+    Returns:
+        bool: True if configuration is valid
+    """
+    if not hasattr(cfg, "dpo"):
+        logging.error("Missing 'dpo' section in config")
+        return False
+    required_dpo_params = ["val_data", "train_data"]
+    missing_params = [p for p in required_dpo_params if not hasattr(cfg.dpo, p)]
+
+    if missing_params:
+        logging.error(f"Missing required DPO parameters: {missing_params}")
+        return False
+
+    # Validate data files exist
+    data_dir = Path(get_original_cwd()) / cfg.paths.data_dir
+    train_file = data_dir / cfg.dpo.train_data
+    val_file = data_dir / cfg.dpo.val_data
+
+    if not train_file.exists():
+        logging.error(f"DPO training data file not found: {train_file}")
+        return False
+
+    if not val_file.exists():
+        logging.error(f"DPO validation data file not found: {val_file}")
+        return False
+
+    logging.info("DPO configuration validation passed")
+    return True
+
+
+def prepare_dpo_data(cfg: DictConfig) -> tuple[Dataset, Dataset]:
+    """Prepare datasets for DPO training with preference pairs.
+
+    Args:
+        cfg (DictConfig): Configuration object
+
+    Returns:
+        Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
+    """
+    data_dir = Path(get_original_cwd()) / cfg.paths.data_dir
+
+    with (data_dir / cfg.dpo.val_data).open(encoding="utf-8") as file:
+        test_dataset = json.load(file)
+
+    with (data_dir / cfg.dpo.train_data).open(encoding="utf-8") as file:
+        train_dataset = json.load(file)
+
+    def process_dpo_dataset(dataset: dict) -> Dataset:
+        """
+        Convert a DPO dataset structured as:
+          {
+            "system": "…",
+            "examples": {
+              "topic1": {
+                "prompt": "...",
+                "chosen": "...",
+                "rejected": "..."
+              },
+              "topic2": { … },
+               …
+            }
+          }
+        into a HuggingFace Dataset with fields "prompt", "chosen",
+        and "rejected" for DPO training.
+        """
+        processed_data = []
+        new_dataset = dict(dataset)
+
+        # Extract system instruction if available
+        system_instruction = new_dataset.get("system", "")
+        new_dataset.pop("system", None)
+
+        for topic_key, example in new_dataset["examples"].items():
+            prompt = example.get("prompt", "")
+            chosen = example.get("chosen", "")
+            rejected = example.get("rejected", "")
+
+            # Enhanced prompt with system instruction
+            full_prompt = prompt
+            if system_instruction:
+                full_prompt = f"System: {system_instruction}\n\nUser: {prompt}"
+            else:
+                full_prompt = f"User: {prompt}"
+
+            # Validate required fields
+            if not prompt:
+                logging.warning(f"Missing prompt for topic {topic_key}")
+                continue
+
+            if not chosen:
+                logging.warning(f"Missing chosen response for topic {topic_key}")
+                continue
+
+            if not rejected:
+                logging.warning(f"Missing rejected response for topic {topic_key}")
+                continue
+
+            processed_data.append(
+                {
+                    "prompt": full_prompt,
+                    "chosen": chosen,
+                    "rejected": rejected,
+                    "topic": topic_key,  # Add topic for debugging
+                },
+            )
+
+            logging.debug(f"Processed DPO topic {topic_key}")
+
+        logging.info(f"Processed {len(processed_data)} DPO examples from dataset")
+        return Dataset.from_list(processed_data)
+
+    train_data = process_dpo_dataset(train_dataset)
+    val_data = process_dpo_dataset(test_dataset)
+    return train_data, val_data
+
+
+def dpo_train(
+    model: AutoModel | PeftModel | PreTrainedModel,
+    tokenizer: AutoTokenizer | PreTrainedTokenizer,
+    cfg: DictConfig,
+    data_preparing_func: Callable | None = None,
+    ref_model: PreTrainedModel | None = None,
+) -> int:
+    """Execute DPO training pipeline.
+
+    Args:
+        model (AutoModel): LLM model
+        tokenizer (AutoTokenizer): LLM tokenizer
+        cfg (DictConfig): Configuration object
+        data_preparing_func (Optional[Callable]): Function used
+            to prepare the data. Should return Tuple[Dataset, Dataset]:
+            Tuple containing train and validation datasets
+        ref_model (Optional[PreTrainedModel]): Reference model for DPO.
+            If None, uses the same model as the policy model.
+
+    Returns:
+        int: Number of global training steps completed
+    """
+    # Validate DPO configuration
+    if not validate_dpo_config(cfg):
+        raise ValueError("DPO configuration validation failed")
+
+    if data_preparing_func is None:
+        train_data, val_data = prepare_dpo_data(cfg)
+    else:
+        train_data, val_data = data_preparing_func(cfg)
+
+    logging.info("DPO data prepared")
+    logging.info(f"Training dataset size: {len(train_data)}")
+    logging.info(f"Validation dataset size: {len(val_data)}")
+
+    # Log sample training data for debugging
+    if len(train_data) > 0:
+        sample = train_data[0]
+        logging.debug(f"Sample DPO training data: {sample}")
+
+    # Create custom optimizer if enabled
+    custom_optimizer = None
+    try:
+        custom_optimizer = create_optimizer(model, cfg)
+        if custom_optimizer is not None:
+            logging.info("Using custom optimizer for DPO training")
+        else:
+            logging.info("Using default optimizer for DPO training")
+    except Exception as e:
+        raise ValueError(f"Failed to create custom optimizer: {e}") from e
+
+    # Get the appropriate report_to backend based on configuration
+    report_to_backend = get_report_to_backend(cfg)
+
+    # Get optimizer configuration updates for custom optimizers
+    optimizer_config_updates = get_optimizer_config_updates(cfg)
+
+    # Apply optimizer configuration updates
+    optim_name = optimizer_config_updates.get(
+        "optim",
+        getattr(cfg.training, "optim", "adamw_torch"),
+    )
+
+    # Set up DPO configuration
+    dpo_config = DPOConfig(
+        output_dir=getattr(cfg.model, "new_model", "./output"),
+        per_device_train_batch_size=getattr(cfg.training, "per_device_train_batch_size", 1),
+        per_device_eval_batch_size=getattr(cfg.training, "per_device_eval_batch_size", 1),
+        gradient_accumulation_steps=getattr(cfg.training, "gradient_accumulation_steps", 1),
+        learning_rate=getattr(cfg.training, "learning_rate", 5e-5),
+        num_train_epochs=getattr(cfg.training, "num_train_epochs", 1),
+        logging_steps=getattr(cfg.training, "logging_steps", 100),
+        max_length=getattr(cfg.dpo, "max_length", getattr(cfg.other, "cutoff_len", 2048)),
+        eval_strategy="steps",
+        eval_steps=getattr(cfg.training, "eval_steps", 500),
+        warmup_steps=getattr(cfg.training, "warmup_steps", 0),
+        fp16=getattr(cfg.training, "fp16", False),
+        bf16=getattr(cfg.training, "bf16", False),
+        weight_decay=getattr(cfg.training, "weight_decay", 0.01),
+        gradient_checkpointing=getattr(cfg.training, "gradient_checkpointing", False),
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        report_to=report_to_backend,  # Use dynamic backend selection
+        save_total_limit=getattr(cfg.training, "save_total_limit", 3),
+        load_best_model_at_end=getattr(cfg.training, "load_best", False),
+        optim=optim_name,  # Use potentially updated optimizer name
+        # DPO-specific parameters
+        beta=getattr(cfg.dpo, "beta", 0.1),
+        loss_type=getattr(cfg.dpo, "loss_type", "sigmoid"),
+        max_prompt_length=getattr(cfg.dpo, "max_prompt_length", 1024),
+    )
+
+    logging.info(
+        f"DPO Config: beta={dpo_config.beta}, "
+        f"loss_type={dpo_config.loss_type}, "
+        f"max_length={dpo_config.max_length}",
+    )
+
+    # Create DPOTrainer with custom optimizer support
+    trainer_kwargs = {
+        "model": model,
+        "ref_model": ref_model,  # Reference model (can be None to use same model)
+        "args": dpo_config,
+        "train_dataset": train_data,
+        "eval_dataset": val_data,
+        "processing_class": tokenizer,
+    }
+
+    # Add custom optimizer if available
+    if custom_optimizer is not None:
+        trainer_kwargs["optimizers"] = (custom_optimizer, None)  # (optimizer, lr_scheduler)
+
+    trainer = DPOTrainer(**trainer_kwargs)
+
+    # Memory optimization before training using enhanced utilities
+    log_memory_usage("Before DPO training: ", cfg=cfg)
+    comprehensive_memory_cleanup(cfg=cfg)
+
+    logging.info("Starting DPO training...")
+    trainer.train()
+    logging.info("DPO training completed")
+
+    global_steps = trainer.state.global_step
+
+    # Log final training statistics
+    if hasattr(trainer.state, "log_history") and trainer.state.log_history:
+        final_log = trainer.state.log_history[-1]
+        logging.info(f"Final DPO training metrics: {final_log}")
+
+    # Enhanced cleanup after DPO training completion
+    log_memory_usage("After DPO training: ", cfg=cfg)
+    comprehensive_memory_cleanup(aggressive=True, cfg=cfg)
+
+    return global_steps

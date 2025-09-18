@@ -1,0 +1,22 @@
+# Test Requirements
+
+This file lists the required packages for running the test suite.
+Install with: pip install -r test_requirements.txt
+
+# Core testing framework
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0
+
+# Configuration and data handling (already in main requirements)
+omegaconf>=2.3.0
+datasets>=2.14.0
+
+# Transformers and ML libraries (already in main requirements)
+transformers>=4.30.0
+torch>=2.0.0
+
+# Additional testing utilities
+pytest-asyncio>=0.21.0
+pytest-xdist>=3.3.0  # For parallel test execution
+pytest-benchmark>=4.0.0  # For performance testing

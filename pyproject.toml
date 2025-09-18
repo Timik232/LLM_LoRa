@@ -1,34 +1,41 @@
-[project]
+[tool.poetry]
 name = "llm-lora"
 version = "0.1.0"
 description = "Project for LLM training"
-authors = [
-    {name = "Timur Komolov",email = "komolov.timurka@mail.ru"}
-]
-license = {text = "MIT"}
+authors = ["Timur Komolov <komolov.timurka@mail.ru>"]
+license = "MIT"
 readme = "README.md"
-requires-python = ">=3.11, <=3.13"
 
 [tool.poetry.dependencies]
-transformers = ">=4.49.0,<5.0.0"
-peft = ">=0.14.0,<0.15.5"
-hydra-core = ">=1.3.2,<2.0.0"
-requests = ">=2.32.3,<3.0.0"
-trl = ">=0.15.2,<0.16.0"
-deepeval = ">=2.5.2,<3.0.0"
-numpy = ">=1.23.5, <2.0.0"
-torchmetrics = ">=1.6.2,<2.0.0"
-mistralai = ">=1.5.2,<2.0.0"
+python = ">=3.11, <=3.13"
+transformers = ">=4.53.0"
+
+peft = ">=0.14.0"
+hydra-core = ">=1.3.2"
+requests = ">=2.32.3"
+trl = ">=0.15.2"
+deepeval = ">=2.5.2"
+numpy = ">=1.23.5,<2.0.0"
+torchmetrics = ">=1.6.2"
+mistralai = ">=1.5.2"
 wandb = ">=0.18"
-bitsandbytes = ">=0.45.3,<0.46.0"
+bitsandbytes = ">=0.45.3"
 torch = { version = "2.6.0", source = "torch-cuda" }
 torchvision = { version = "0.21.0", source = "torch-cuda" }
 sentencepiece = "^0.2.0"
-huggingface-hub = "^0.29.3"
-llama-cpp-python = {version = "^0.3.8", extras = ["cublas"] }
+huggingface-hub = ">=0.34.0,<1.0"
+llama-cpp-python = { version = "^0.3.8,<0.3.15", extras = ["cublas"] }
 scipy = "^1.15.2"
 ollama = "^0.4.7"
-
+ninja = "^1.11.1.4"
+mlflow = "^3.3.1"
+fire = "^0.7.0"
+optuna = "^4.4.0"
+python-dotenv = "^1.1.1"
+myst-parser = "^4.0.1"
+adam-mini = "^1.1.1"
+psutil = "^7.0.0"
+nvidia-ml-py = "^13.580.82"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.1.0"
@@ -38,18 +45,91 @@ autodocsumm = "^0.2.14"
 types-requests = "^2.32.0.20250306"
 types-pyyaml = "^6.0.12.20250326"
 uv = "^0.7.16"
-optuna = "^4.4.0"
+sphinx-rtd-theme = "^3.0.2"
+ruff = "^0.8.4"
+bandit = "^1.7.10"
+codespell = "^2.3.0"
 
 [[tool.poetry.source]]
 name = "torch-cuda"
-url = "https://download.pytorch.org/whl/cu118"
+url = "https://download.pytorch.org/whl/cu124"
 priority = "explicit"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--tb=short",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "slow: Slow tests",
+    "gpu: Tests requiring GPU",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.ruff]
+line-length = 95
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E","F","W","B","N","ANN","S","I","UP","RET","SIM","RUF","LOG","PLC","PERF","COM","PD"]
+ignore = ["E203", "W605", "PLR0913", "PLR0915", "PLR2004", "COM812",
+    "TRY003", "RET504", "S101", "ANN401", "S603", "RUF001", "RUF002"]
+
+[tool.ruff.lint.per-file-ignores]
+"docs/*" = ["ANN"]
+"vk_bot/*" = ["N999", "ANN001", "ANN201"]
+"training_model/*" = ["S105", "SIM108"]
+"legacy/*" = ["ALL"]
+"training_model/types.py" = ["UP007", "PYI036"]
+"tests/*" = ["ANN001"]
+
+[tool.black]
+line-length = 95
+target-version = ["py311", "py312", "py313"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+
+[tool.bandit]
+exclude_dirs = ["tests", "docs"]
+skips = ["B101", "B601", "B404", "B105", "B603", "B607"]
+# Skip assert_used, shell_injection_process_start, subprocess import, hardcoded password, subprocess calls
+
+[tool.bandit.assert_used]
+exclude = ["*test*.py", "*conftest*.py"]
+
+[tool.codespell]
+skip = "*.git,*.svg,*.pdf,*.pyc,*/_build/*,*/venv/*,*/node_modules/*"
+ignore-words-list = "ist,alist,hass,tha,ente"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
-
 
 [tool.poetry-auto-export]
 output = "requirements.txt"

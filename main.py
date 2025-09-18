@@ -1,6 +1,7 @@
-# from training_model.__main__ import main
-from testing_model.__main__ import test_main
+import fire
+
+from training_model import LLMLoRaCLI
 
 if __name__ == "__main__":
-    # main()
-    test_main()
+    cli = LLMLoRaCLI()
+    fire.Fire(cli)
