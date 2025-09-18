@@ -26,8 +26,11 @@ def validate_dpo_config(cfg: DictConfig) -> bool:
     Returns:
         bool: True if configuration is valid
     """
+    if not hasattr(cfg, "dpo"):
+        logging.error("Missing 'dpo' section in config")
+        return False
     required_dpo_params = ["val_data", "train_data"]
-    missing_params = [param for param in required_dpo_params if not hasattr(cfg.dpo, param)]
+    missing_params = [p for p in required_dpo_params if not hasattr(cfg.dpo, p)]
 
     if missing_params:
         logging.error(f"Missing required DPO parameters: {missing_params}")
@@ -48,7 +51,6 @@ def validate_dpo_config(cfg: DictConfig) -> bool:
 
     logging.info("DPO configuration validation passed")
     return True
-
 
 def prepare_dpo_data(cfg: DictConfig) -> tuple[Dataset, Dataset]:
     """Prepare datasets for DPO training with preference pairs.
