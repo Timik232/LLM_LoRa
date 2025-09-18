@@ -71,8 +71,8 @@ class CustomLocalModel(DeepEvalBaseLLM):
         Returns:
             str: Generated model response.
         """
-        return self.generate(prompt)
-
+        msg = await self.model.ainvoke(prompt)
+        return msg.content
     def get_model_name(self) -> str:
         """
         Get the name of the model.
