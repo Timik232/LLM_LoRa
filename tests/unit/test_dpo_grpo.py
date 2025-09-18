@@ -443,7 +443,7 @@ class TestTrainingIntegration:
 
     @patch("training_model.dpo_train.DPOTrainer")
     @patch("training_model.dpo_train.DPOConfig")
-    def test_dpo_train_integration(self, mock_trainer) -> None:
+    def test_dpo_train_integration(self, mock_dpo_config, mock_trainer) -> None:
         """Test DPO training integration."""
         # Mock configuration
         cfg = OmegaConf.create(
