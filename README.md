@@ -9,8 +9,9 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-red.svg)](https://pytorch.org/)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](docker-compose.yaml)
 [![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.53.0+-yellow.svg)](https://huggingface.co/transformers/)
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Timik232/LLM_LoRa?utm_source=oss&utm_medium=github&utm_campaign=Timik232%2FLLM_LoRa&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
-[Quick Start](#quick-start) • [Features](#features) • [Installation](#installation) • [Documentation](#documentation) • [Examples](#examples)
+[Quick Start](#quick-start) • [Features](#features) • [Installation](#installation) • [Documentation](https://llm-lora.readthedocs.io/en/latest/index.html) • [Examples](#examples)
 
 </div>
 
@@ -35,7 +36,7 @@ Get started in under 2 minutes:
 
 ```bash
 # Clone the repository
-git clone https://github.com/timik232/LLM_LoRa.git
+git clone https://github.com/Timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # Configure training parameters
@@ -145,7 +146,7 @@ sudo systemctl restart docker
 docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
 
 # 3. Clone repository
-git clone https://github.com/timik232/LLM_LoRa.git
+git clone https://github.com/Timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # 4. Configure training (optional)
@@ -169,7 +170,7 @@ docker-compose up ollama
 
 ```bash
 # Clone repository
-git clone https://github.com/timik232/LLM_LoRa.git
+git clone https://github.com/Timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # Install Poetry (if not installed)
@@ -429,7 +430,7 @@ We welcome contributions! Please see our [Contributing Guide](docs/CONTRIBUTING.
 
 ```bash
 # Clone and setup
-git clone https://github.com/timik232/LLM_LoRa.git
+git clone https://github.com/Timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # Install with dev dependencies
@@ -558,10 +559,10 @@ python main.py training.per_device_train_batch_size=1 training.gradient_accumula
 1. **Check logs first**: `docker-compose logs llm_training`
 2. **Verify system requirements**: NVIDIA GPU, 70GB+ disk space, CUDA toolkit
 3. **Update drivers**: Ensure latest NVIDIA drivers are installed
-4. **GitHub Issues**: Report bugs at [GitHub Issues](https://github.com/timik232/LLM_LoRa/issues)
+4. **GitHub Issues**: Report bugs at [GitHub Issues](https://github.com/Timik232/LLM_LoRa/issues)
 5. **Include diagnostics**: GPU info (`nvidia-smi`), Docker version, error logs
 
-For more issues, check our [Issues](https://github.com/timik232/LLM_LoRa/issues) page.
+For more issues, check our [Issues](https://github.com/Timik232/LLM_LoRa/issues) page.
 
 ## 📄 License
 
@@ -590,6 +591,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Star ⭐ this repository if it helped you!**
 
-[Report Bug](https://github.com/timik232/LLM_LoRa/issues) • [Request Feature](https://github.com/timik232/LLM_LoRa/issues) • [Discussions](https://github.com/timik232/LLM_LoRa/discussions)
+[Report Bug](https://github.com/Timik232/LLM_LoRa/issues) • [Request Feature](https://github.com/Timik232/LLM_LoRa/issues) • [Discussions](https://github.com/Timik232/LLM_LoRa/discussions)
 
 </div>

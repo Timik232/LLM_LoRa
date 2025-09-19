@@ -49,6 +49,7 @@ from .grpo_train import grpo_train
 from .logging_config import configure_logging
 from .logging_utils import (
     get_report_to_backend,
+    log_dataset_samples,
     log_evaluation_metrics,
     log_training_artifacts,
     log_training_config,
@@ -490,6 +491,10 @@ def data_preparation(
                 "Valid options: 'auto_split', 'separate_validation', 'separate_files'",
             )
 
+        # Log raw datasets before processing
+        log_dataset_samples(train_dataset, cfg, "train", "raw")
+        log_dataset_samples(test_dataset, cfg, "validation", "raw")
+
         # Use temporary directory for JSON files
         try:
             with TemporaryDirectory() as temp_dir:
@@ -537,6 +542,11 @@ def data_preparation(
                     else:
                         val_list = [tokenize_partial(cast(dict, x)) for x in ds_test]
                         val_data = Dataset.from_list(val_list)
+
+                    # Log processed datasets after tokenization
+                    log_dataset_samples(train_data, cfg, "train", "processed")
+                    log_dataset_samples(val_data, cfg, "validation", "processed")
+
                 except Exception as e:
                     raise DataProcessingError(
                         f"Failed to load or tokenize datasets: {e}",
@@ -617,6 +627,8 @@ def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str) -> N
                 cleanup_model(peft_model, "peft_model")
             if "base_model" in locals():
                 cleanup_model(base_model, "base_model")
+            if "tokenizer" in locals():
+                cleanup_tokenizer(tokenizer, "tokenizer")
             log_memory_usage("After model merge cleanup: ")
 
         logging.info("Model merged")
@@ -1236,6 +1248,9 @@ def convert_to_gguf(
         raise
     except Exception as e:
         raise ConversionError(f"Unexpected error during GGUF conversion: {e}") from e
+    finally:
+        comprehensive_memory_cleanup(aggressive=True, cfg=cfg)
+        log_memory_usage("After GGUF conversion cleanup: ", cfg=cfg)
 
 
 def convert_to_rkllm(
@@ -1722,7 +1737,7 @@ def train_pipeline(cfg: DictConfig) -> dict[str, Any]:
 
                 # GGUF conversion (optional based on config)
                 if cfg.model.quant.get(
-                    "enabled",
+                    "convert_to_gguf",
                     True,
                 ):  # Default to True for backward compatibility
                     outfile = cfg.model.outfile
@@ -1854,6 +1869,8 @@ def main_train(data_dir: str, cfg: DictConfig) -> dict[str, Any]:
     """
     try:
         result = train_pipeline(cfg)
+        comprehensive_memory_cleanup(aggressive=cfg.memory_management.aggressive_cleanup)
+        log_memory_usage("Final script cleanup: ", cfg=cfg)
 
         try:
             test_file_path = Path(data_dir) / "test_ru.json"

@@ -112,7 +112,7 @@ html_sidebars = {
 # HTML context
 html_context = {
     "display_github": True,
-    "github_user": "timik232",
+    "github_user": "Timik232",
     "github_repo": "LLM_LoRa",
     "github_version": "main",
     "conf_py_path": "/docs/",

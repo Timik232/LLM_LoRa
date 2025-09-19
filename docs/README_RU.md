@@ -32,7 +32,7 @@
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/timik232/LLM_LoRa.git
+git clone https://github.com/Timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # Настройте параметры обучения
@@ -126,7 +126,7 @@ sudo systemctl restart docker
 docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
 
 # 3. Клонируйте репозиторий
-git clone https://github.com/timik232/LLM_LoRa.git
+git clone https://github.com/Timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # 4. Настройте обучение (опционально)
@@ -152,7 +152,7 @@ docker-compose up ollama
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/timik232/LLM_LoRa.git
+git clone https://github.com/Timik232/LLM_LoRa.git
 cd LLM_LoRa
 
 # Установите Poetry (если не установлен)
@@ -458,10 +458,10 @@ python main.py training.per_device_train_batch_size=1 training.gradient_accumula
 1. **Сначала проверьте логи**: `docker-compose logs llm_training`
 2. **Проверьте системные требования**: GPU NVIDIA, 70GB+ дискового пространства, CUDA toolkit
 3. **Обновите драйверы**: Убедитесь, что установлены последние драйверы NVIDIA
-4. **GitHub Issues**: Сообщайте о багах в [GitHub Issues](https://github.com/timik232/LLM_LoRa/issues)
+4. **GitHub Issues**: Сообщайте о багах в [GitHub Issues](https://github.com/Timik232/LLM_LoRa/issues)
 5. **Включите диагностику**: информация о GPU (`nvidia-smi`), версия Docker, логи ошибок
 
-Больше проблем можно найти на странице [Issues](https://github.com/timik232/LLM_LoRa/issues).
+Больше проблем можно найти на странице [Issues](https://github.com/Timik232/LLM_LoRa/issues).
 
 ## 📄 Лицензия
 
@@ -479,4 +479,4 @@ python main.py training.per_device_train_batch_size=1 training.gradient_accumula
 
 **Поставьте звезду ⭐ этому репозиторию, если он вам помог!**
 
-[Сообщить об ошибке](https://github.com/timik232/LLM_LoRa/issues) • [Запросить функцию](https://github.com/timik232/LLM_LoRa/issues) • [Обсуждения](https://github.com/timik232/LLM_LoRa/discussions)
+[Сообщить об ошибке](https://github.com/Timik232/LLM_LoRa/issues) • [Запросить функцию](https://github.com/Timik232/LLM_LoRa/issues) • [Обсуждения](https://github.com/timik232/LLM_LoRa/discussions)

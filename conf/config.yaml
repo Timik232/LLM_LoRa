@@ -156,6 +156,16 @@ logging:
     tracking_uri: "http://localhost:5000"
     log_artifacts: false
 
+  dataset_logging:
+    enabled: true                    # Enable dataset sample logging before training
+    log_level: "INFO"               # Log level for dataset samples: "DEBUG", "INFO", "WARNING"
+    num_samples: 5                  # Number of samples to log from each dataset
+    log_raw_data: true              # Log samples before processing/preparation
+    log_processed_data: true        # Log samples after processing/preparation
+    include_metadata: true          # Include dataset metadata (size, format, etc.)
+    truncate_long_text: true        # Truncate very long text fields for readability
+    max_text_length: 500            # Maximum length for text fields when truncating
+
 
 hydra:
   run:

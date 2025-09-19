@@ -12,7 +12,7 @@ from peft import PeftModel
 from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
 from trl import DPOConfig, DPOTrainer
 
-from .logging_utils import get_report_to_backend
+from .logging_utils import get_report_to_backend, log_dataset_samples
 from .memory_utils import comprehensive_memory_cleanup, log_memory_usage
 from .optimizer_factory import create_optimizer, get_optimizer_config_updates
 
@@ -167,6 +167,9 @@ def dpo_train(
 
     if data_preparing_func is None:
         train_data, val_data = prepare_dpo_data(cfg)
+        # Log dataset samples for DPO data preparation
+        log_dataset_samples(train_data, cfg, "dpo_train", "processed")
+        log_dataset_samples(val_data, cfg, "dpo_validation", "processed")
     else:
         train_data, val_data = data_preparing_func(cfg)
 

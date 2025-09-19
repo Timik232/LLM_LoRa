@@ -265,11 +265,11 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
         return False
 
     # Check GRPO-specific parameters in cfg.grpo
-    grpo_params = ["num_generations"]
+    grpo_params = ["num_generations", "val_data", "train_data"]
     missing_grpo_params = [p for p in grpo_params if not hasattr(cfg.grpo, p)]
 
     # Check path-based parameters in cfg.paths
-    path_params = ["val_data", "train_data", "data_dir"]
+    path_params = ["data_dir"]
     missing_path_params = [p for p in path_params if getattr(cfg.paths, p, None) is None]
 
     all_missing_params = []
@@ -290,8 +290,8 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
         work_dir = Path.cwd()
 
     data_dir = Path(work_dir) / cfg.paths.data_dir
-    train_file = data_dir / cfg.paths.train_data
-    val_file = data_dir / cfg.paths.val_data
+    train_file = data_dir / cfg.grpo.train_data
+    val_file = data_dir / cfg.grpo.val_data
 
     if not train_file.exists():
         logger.error(f"GRPO training data file not found: {train_file}")

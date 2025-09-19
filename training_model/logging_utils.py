@@ -212,3 +212,125 @@ def validate_mlflow_connection(cfg: DictConfig) -> bool:
     except Exception as e:
         logging.exception(f"MLflow connection validation failed: {e}")
         return False
+
+
+def log_dataset_samples(
+    dataset: list[dict] | Any,
+    cfg: DictConfig,
+    dataset_name: str = "dataset",
+    phase: str = "unknown",
+) -> None:
+    """Log sample entries from a dataset for inspection before training.
+
+    Args:
+        dataset: The dataset to sample from (list of dicts, HuggingFace dataset, etc.)
+        cfg: Hydra configuration object containing dataset_logging settings
+        dataset_name: Name of the dataset for logging context (e.g., "train", "validation")
+        phase: Processing phase (e.g., "raw", "processed")
+    """
+    try:
+        # Check if dataset logging is enabled
+        dataset_logging_cfg = getattr(cfg.logging, "dataset_logging", {})
+        if not getattr(dataset_logging_cfg, "enabled", False):
+            return
+
+        # Get logging configuration parameters
+        log_level = getattr(dataset_logging_cfg, "log_level", "INFO").upper()
+        num_samples = getattr(dataset_logging_cfg, "num_samples", 5)
+        include_metadata = getattr(dataset_logging_cfg, "include_metadata", True)
+        truncate_long_text = getattr(dataset_logging_cfg, "truncate_long_text", True)
+        max_text_length = getattr(dataset_logging_cfg, "max_text_length", 500)
+
+        # Skip if wrong phase
+        log_raw = getattr(dataset_logging_cfg, "log_raw_data", True)
+        log_processed = getattr(dataset_logging_cfg, "log_processed_data", True)
+
+        if phase == "raw" and not log_raw:
+            return
+        if phase == "processed" and not log_processed:
+            return
+
+        # Convert log level string to logging constant
+        log_level_int = getattr(logging, log_level, logging.INFO)
+
+        # Get dataset size and convert to list if needed
+        dataset_size = 0
+        dataset_list = []
+
+        # Handle different dataset types
+        if hasattr(dataset, "__len__") and hasattr(dataset, "__getitem__"):
+            # HuggingFace dataset or similar
+            dataset_size = len(dataset)
+            dataset_list = [dataset[i] for i in range(min(num_samples, dataset_size))]
+        elif isinstance(dataset, list):
+            # List of dictionaries
+            dataset_size = len(dataset)
+            dataset_list = dataset[:num_samples]
+        else:
+            # Unknown dataset type
+            logging.warning(f"Unknown dataset type for {dataset_name}: {type(dataset)}")
+            return
+
+        # Log metadata if enabled
+        if include_metadata:
+            logging.log(
+                log_level_int,
+                f"Dataset '{dataset_name}' ({phase}): {dataset_size} total samples, "
+                f"showing first {min(num_samples, dataset_size)} samples",
+            )
+
+        # Log individual samples
+        for i, sample in enumerate(dataset_list):
+            # Convert sample to string representation
+            if isinstance(sample, dict):
+                sample_str = _format_sample_dict(sample, truncate_long_text, max_text_length)
+            else:
+                sample_str = str(sample)
+                if truncate_long_text and len(sample_str) > max_text_length:
+                    sample_str = sample_str[:max_text_length] + "..."
+
+            logging.log(
+                log_level_int,
+                f"Dataset '{dataset_name}' ({phase}) Sample {i+1}:\n{sample_str}",
+            )
+
+        logging.log(
+            log_level_int,
+            f"Finished logging {len(dataset_list)} samples from "
+            f"dataset '{dataset_name}' ({phase})",
+        )
+
+    except Exception as e:
+        logging.warning(f"Failed to log dataset samples for {dataset_name}: {e}")
+
+
+def _format_sample_dict(
+    sample: dict[str, Any], truncate_long_text: bool = True, max_text_length: int = 500
+) -> str:
+    """Format a sample dictionary for logging display.
+
+    Args:
+        sample: Dictionary representing a dataset sample
+        truncate_long_text: Whether to truncate long text fields
+        max_text_length: Maximum length for text fields when truncating
+
+    Returns:
+        Formatted string representation of the sample
+    """
+    formatted_lines = []
+
+    for key, value in sample.items():
+        # Convert value to string
+        value_str = str(value)
+
+        # Truncate if needed
+        if truncate_long_text and len(value_str) > max_text_length:
+            value_str = (
+                value_str[:max_text_length]
+                + f"... (truncated, original length: {len(str(value))})"
+            )
+
+        # Format the key-value pair
+        formatted_lines.append(f"  {key}: {value_str}")
+
+    return "{\n" + "\n".join(formatted_lines) + "\n}"
