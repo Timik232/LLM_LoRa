@@ -7,7 +7,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-red.svg)](https://pytorch.org/)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](../docker-compose.yaml)
 
-[Быстрый старт](#быстрый-старт) • [Возможности](#возможности) • [Установка](#установка) • [Документация](#документация) • [Примеры](#примеры)
+[Быстрый старт](README_RU.md#быстрый-старт) • [Возможности](README_RU.md#возможности) • [Установка](README_RU.md#установка) • [Документация](README_RU.md#документация) • [Примеры](README_RU.md#примеры)
 
 ---
 

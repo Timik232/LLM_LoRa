@@ -11,7 +11,7 @@
 [![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.53.0+-yellow.svg)](https://huggingface.co/transformers/)
 ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Timik232/LLM_LoRa?utm_source=oss&utm_medium=github&utm_campaign=Timik232%2FLLM_LoRa&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
-[Quick Start](#quick-start) • [Features](#features) • [Installation](#installation) • [Documentation](https://llm-lora.readthedocs.io/en/latest/index.html) • [Examples](#examples)
+[Quick Start](README.md#quick-start) • [Features](README.md#features) • [Installation](README.md#installation) • [Documentation](https://llm-lora.readthedocs.io/en/latest/index.html) • [Examples](README.md#examples)
 
 </div>
 
