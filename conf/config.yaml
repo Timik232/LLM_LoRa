@@ -14,7 +14,7 @@ model:
   quant:
     enabled: true
     convert_to_gguf: true # Enable GGUF conversion in training pipeline
-    qtype: "q4_1"
+    qtype: "q4_k_m"
     gguf_dir: "${paths.gguf_directory}" # if you change this, change in run_pipeline
     use_8bit: false
   rkllm:
@@ -26,22 +26,33 @@ model:
     hybrid_quantization: false # Enable hybrid quantization
     num_npu_core: 1 # Number of NPU cores to use (1-3)
   lora:
-    r: 8
-    alpha: 16
+    r: 16
+    alpha: 64
     dropout: 0.1
   model_type: "auto" # gemma or gemma3n or auto
 
+# Global generation configuration - shared across all training methods
+generation:
+  temperature: 0.7              # Sampling temperature (0.0 = deterministic, higher = more random)
+  top_k: 50                     # Top-k sampling (0 = disabled)
+  top_p: 0.95                   # Nucleus/top-p sampling (1.0 = disabled)
+  do_sample: true               # Enable sampling (vs greedy/beam search)
+  max_new_tokens: 256           # Maximum tokens to generate
+  repetition_penalty: 1.1       # Penalize repetition (1.0 = no penalty)
+  length_penalty: 1.0           # Length penalty for generation (1.0 = no penalty)
+  pad_token_id: null            # Will be set automatically from tokenizer
+
 training:
-  per_device_train_batch_size: 1
-  per_device_eval_batch_size: 1
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
   gradient_accumulation_steps: 6
-  num_train_epochs: 1.5
+  num_train_epochs: 2
   eval_steps: 50
   logging_steps: 5
   warmup_steps: 10
-  learning_rate: 2e-5
+  learning_rate: 5e-5
   fp16: false
-  bf16: false
+  bf16: true
   weight_decay: 0.05
   max_seq_length: 2048
   optim: "paged_adamw_8bit"
@@ -56,7 +67,7 @@ training:
   optuna_n_trials: 10
   seed: 42
   adam_mini:
-    enabled: true  # Enable Adam-mini optimizer (default: false, uses standard optimizer)
+    enabled: false  # Enable Adam-mini optimizer (default: false, uses standard optimizer)
     # Standard optimizer parameters (recommended to use same values as AdamW)
     learning_rate: ${training.learning_rate}  # Inherit from main training config
     weight_decay: ${training.weight_decay}    # Inherit from main training config
@@ -88,13 +99,14 @@ grpo:
   use_cache: false
   # GRPO-specific hyperparameters
   epsilon: 0.2  # KL penalty coefficient for policy gradient
-  beta: 0.01    # KL regularization parameter
+  beta: 0.1    # KL regularization parameter
   loss_type: "sigmoid"  # Loss function type: "sigmoid" or "hinge"
-  temperature: 0.7      # Sampling temperature for generation
-  top_k: 50            # Top-k sampling parameter
-  top_p: 0.95          # Top-p (nucleus) sampling parameter
-  do_sample: true      # Enable sampling during generation
-  response_length: 256 # Maximum response length for completions
+  # Generation parameters (maintained for backward compatibility, but can reference global defaults)
+  temperature: ${generation.temperature}      # Sampling temperature for generation
+  top_k: ${generation.top_k}                  # Top-k sampling parameter
+  top_p: ${generation.top_p}                  # Top-p (nucleus) sampling parameter
+  do_sample: ${generation.do_sample}          # Enable sampling during generation
+  response_length: ${generation.max_new_tokens} # Maximum response length for completions
   # Reference model settings (optional - uses same model by default)
   use_ref_model: false  # Whether to use a separate reference model
   ref_model_name: null  # Reference model name (if different from base model)

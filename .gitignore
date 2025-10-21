@@ -201,3 +201,8 @@ CLAUDE.md
 design.md
 
 tasks.md
+/data
+
+node_modules/npm/
+
+node_modules/

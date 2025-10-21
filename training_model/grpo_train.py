@@ -16,6 +16,7 @@ from trl import GRPOConfig, GRPOTrainer
 from .logging_utils import get_report_to_backend, log_dataset_samples
 from .memory_utils import comprehensive_memory_cleanup, log_memory_usage
 from .optimizer_factory import create_optimizer, get_optimizer_config_updates
+from .utils import get_generation_config
 
 
 def validate_grpo_config(cfg: DictConfig) -> bool:
@@ -333,17 +334,8 @@ def grpo_train(
     if cfg.grpo.max_completion_length == "None":
         cfg.grpo.max_completion_length = tokenizer.model_max_length
 
-    # Set up generation config with GRPO parameters
-    generation_config = {
-        "do_sample": getattr(cfg.grpo, "do_sample", True),
-        "temperature": getattr(cfg.grpo, "temperature", 0.7),
-        "top_k": getattr(cfg.grpo, "top_k", 50),
-        "top_p": getattr(cfg.grpo, "top_p", 0.95),
-        "max_new_tokens": getattr(cfg.grpo, "response_length", 256),
-        "pad_token_id": tokenizer.pad_token_id,
-    }
-
-    logging.info(f"Generation config: {generation_config}")
+    # Set up generation config using utility function with GRPO-specific parameters
+    generation_config = get_generation_config(cfg, tokenizer, method="grpo")
 
     # Create custom optimizer if enabled
     custom_optimizer = None

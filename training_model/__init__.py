@@ -325,7 +325,7 @@ class LLMLoRaCLI:
             self.train(config_name, config_dir, **overrides)
 
         # Conversion phase
-        self.convert(config_name, config_dir, **overrides)
+        # self.convert(config_name, config_dir, **overrides)
 
         # Testing phase
         if not skip_test and self.cfg.get("testing", {}).get("manual_lmstudio_test", False):

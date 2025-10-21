@@ -34,7 +34,6 @@ from trl import SFTConfig, SFTTrainer
 
 import wandb
 
-from .auth_utils import _load_environment_if_needed
 from .data_preparation import dataset_to_json
 from .dpo_train import dpo_train
 from .exceptions import (
@@ -65,6 +64,7 @@ from .memory_utils import (
 )
 from .optimizer_factory import create_optimizer, get_optimizer_config_updates
 from .types import ModelType, TrainingResult
+from .utils import _load_environment_if_needed
 
 _LOGGING_BACKEND: str | None = None
 
