@@ -7,7 +7,7 @@ defaults:
 model:
   model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
   new_model: "4b-chat-vika"
-  torch_dtype: "float16"
+  torch_dtype: "bfloat16"
   attn_implementation: "flash_attention_2"
   train_steps: 60
   outfile: "custom-model.gguf" # if you change this, change the model in run_pipeline
@@ -46,11 +46,11 @@ training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 6
-  num_train_epochs: 2
+  num_train_epochs: 1
   eval_steps: 50
   logging_steps: 5
   warmup_steps: 10
-  learning_rate: 5e-5
+  learning_rate: 1e-4
   fp16: false
   bf16: true
   weight_decay: 0.05
@@ -60,7 +60,7 @@ training:
   gradient_checkpointing: true
   save_total_limit: 5
   load_best: false
-  use_grpo: false
+  use_grpo: true
   use_sft: true
   use_dpo: false
   use_optuna_optimize: false
@@ -100,7 +100,7 @@ grpo:
   # GRPO-specific hyperparameters
   epsilon: 0.2  # KL penalty coefficient for policy gradient
   beta: 0.1    # KL regularization parameter
-  loss_type: "sigmoid"  # Loss function type: "sigmoid" or "hinge"
+  loss_type: "dr_grpo"
   # Generation parameters (maintained for backward compatibility, but can reference global defaults)
   temperature: ${generation.temperature}      # Sampling temperature for generation
   top_k: ${generation.top_k}                  # Top-k sampling parameter

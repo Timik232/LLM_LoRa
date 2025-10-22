@@ -56,7 +56,7 @@ def comprehensive_memory_cleanup(
     aggressive: bool = False, cfg: DictConfig | None = None
 ) -> None:
     """
-    Perform comprehensive memory cleanup.
+    Perform comprehensive memory cleanup with graceful CUDA error handling.
     Args:
         aggressive: If True, performs more thorough cleanup.
         cfg: Configuration object with memory management settings.
@@ -66,15 +66,44 @@ def comprehensive_memory_cleanup(
         aggressive = getattr(cfg.memory_management, "aggressive_cleanup", aggressive)
 
     logger.debug("Starting memory cleanup")
+
     # Standard cleanup
     gc.collect()
+
     if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()  # Reset peak stats for better monitoring
+        try:
+            torch.cuda.empty_cache()
+        except RuntimeError as e:
+            # If CUDA is in an error state, try alternative cleanup methods
+            logger.warning(
+                f"torch.cuda.empty_cache() failed: {e}. Attempting alternative cleanup."
+            )
+            try:
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats()
+            except RuntimeError as e2:
+                logger.warning(
+                    f"Alternative CUDA cleanup also failed: {e2}. Continuing with CPU cleanup."
+                )
+
+        try:
+            torch.cuda.reset_peak_memory_stats()  # Reset peak stats for better monitoring
+        except RuntimeError as e:
+            logger.warning(f"Failed to reset CUDA peak memory stats: {e}")
+
         if aggressive:
-            torch.cuda.synchronize()  # Ensure all operations are complete
-            torch.cuda.ipc_collect()  # Collect inter-process communication memory
+            try:
+                torch.cuda.synchronize()  # Ensure all operations are complete
+            except RuntimeError as e:
+                logger.warning(f"torch.cuda.synchronize() failed: {e}")
+
+            try:
+                torch.cuda.ipc_collect()  # Collect inter-process communication memory
+            except RuntimeError as e:
+                logger.warning(f"torch.cuda.ipc_collect() failed: {e}")
+
             gc.collect()  # One extra GC pass in aggressive mode (avoid loops)
+
     logger.debug("Memory cleanup completed")
 
 
@@ -96,7 +125,9 @@ def cleanup_object(obj: Any, obj_name: str = "object", cfg: DictConfig | None = 
         # Clear specific attributes if it's a trainer-like object
         if hasattr(obj, "model"):
             obj.model = None
-        if hasattr(obj, "tokenizer"):
+        if hasattr(obj, "processing_class"):
+            obj.processing_class = None
+        elif hasattr(obj, "tokenizer"):
             obj.tokenizer = None
         if hasattr(obj, "train_dataset"):
             obj.train_dataset = None

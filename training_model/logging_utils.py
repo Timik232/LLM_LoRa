@@ -1,6 +1,7 @@
 """MLflow logging utilities for training pipeline."""
 
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,51 @@ def get_report_to_backend(cfg: DictConfig) -> str:
     if backend == "wandb":
         return "wandb"
     return "none"
+
+
+@contextmanager
+def mlflow_phase_run(phase_name: str, enabled: bool = True) -> None:
+    """Context manager for MLflow nested runs per training phase.
+
+    This prevents parameter conflicts when different training phases (SFT, GRPO, DPO)
+    have different trainer configurations. Each phase gets its own nested run.
+
+    Args:
+        phase_name: Name of the training phase (e.g., "sft", "grpo", "dpo")
+        enabled: Whether MLflow is enabled (if False, no-op context manager)
+
+    Yields:
+        None
+
+    Example:
+        >>> with mlflow_phase_run("sft", enabled=True):
+        ...     trainer.train()
+    """
+    if not enabled:
+        yield
+        return
+
+    try:
+        import mlflow
+
+        if mlflow.active_run() is None:
+            yield
+            return
+
+        mlflow.start_run(nested=True, run_name=phase_name)
+        logging.info(f"Started nested MLflow run for {phase_name} phase")
+
+        try:
+            yield
+        except Exception:
+            raise
+        finally:
+            mlflow.end_run()
+            logging.info(f"Ended nested MLflow run for {phase_name} phase")
+
+    except ImportError:
+        logging.debug("MLflow not available, skipping nested run")
+        yield
 
 
 def log_training_config(cfg: DictConfig) -> None:

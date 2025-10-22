@@ -42,8 +42,11 @@ def get_generation_config(
             "top_p": getattr(cfg.generation, "top_p", 0.95),
             "max_new_tokens": getattr(cfg.generation, "max_new_tokens", 256),
             "repetition_penalty": getattr(cfg.generation, "repetition_penalty", 1.1),
-            "length_penalty": getattr(cfg.generation, "length_penalty", 1.0),
-            "pad_token_id": tokenizer.pad_token_id,
+            "pad_token_id": (
+                tokenizer.pad_token_id
+                if tokenizer.pad_token_id is not None
+                else tokenizer.eos_token_id
+            ),
         }
 
         # Apply GRPO-specific overrides for backward compatibility
@@ -59,15 +62,26 @@ def get_generation_config(
                     cfg.grpo, "response_length", generation_config["max_new_tokens"]
                 ),
                 "repetition_penalty": generation_config["repetition_penalty"],
-                "length_penalty": generation_config["length_penalty"],
                 "pad_token_id": generation_config["pad_token_id"],
             }
             generation_config.update(grpo_config)
 
         # Remove None values and ensure pad_token_id is set
         generation_config = {k: v for k, v in generation_config.items() if v is not None}
-        if generation_config.get("pad_token_id") is None:
-            generation_config["pad_token_id"] = tokenizer.pad_token_id
+
+        # Ensure pad_token_id is always set (required for generation)
+        if (
+            "pad_token_id" not in generation_config
+            or generation_config.get("pad_token_id") is None
+        ):
+            # Try multiple fallback options
+            pad_id = tokenizer.pad_token_id
+            if pad_id is None:
+                pad_id = tokenizer.eos_token_id
+            if pad_id is None:
+                pad_id = 0
+            generation_config["pad_token_id"] = pad_id
+            logging.info(f"Set pad_token_id to {pad_id}")
 
         logging.info(f"Generation config for {method}: {generation_config}")
         return generation_config

@@ -6,13 +6,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from datasets import Dataset
-from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
-from peft import PeftModel
+from peft import LoraConfig, PeftModel
 from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
 from trl import DPOConfig, DPOTrainer
 
-from .logging_utils import get_report_to_backend, log_dataset_samples
+from .logging_utils import get_report_to_backend, log_dataset_samples, mlflow_phase_run
 from .memory_utils import comprehensive_memory_cleanup, log_memory_usage
 from .optimizer_factory import create_optimizer, get_optimizer_config_updates
 
@@ -37,7 +36,7 @@ def validate_dpo_config(cfg: DictConfig) -> bool:
         return False
 
     # Validate data files exist
-    data_dir = Path(get_original_cwd()) / cfg.paths.data_dir
+    data_dir = Path.cwd() / cfg.paths.data_dir
     train_file = data_dir / cfg.dpo.train_data
     val_file = data_dir / cfg.dpo.val_data
 
@@ -62,7 +61,7 @@ def prepare_dpo_data(cfg: DictConfig) -> tuple[Dataset, Dataset]:
     Returns:
         Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
     """
-    data_dir = Path(get_original_cwd()) / cfg.paths.data_dir
+    data_dir = Path.cwd() / cfg.paths.data_dir
 
     with (data_dir / cfg.dpo.val_data).open(encoding="utf-8") as file:
         test_dataset = json.load(file)
@@ -223,10 +222,10 @@ def dpo_train(
         weight_decay=getattr(cfg.training, "weight_decay", 0.01),
         gradient_checkpointing=getattr(cfg.training, "gradient_checkpointing", False),
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        report_to=report_to_backend,  # Use dynamic backend selection
+        report_to=report_to_backend,
         save_total_limit=getattr(cfg.training, "save_total_limit", 3),
         load_best_model_at_end=getattr(cfg.training, "load_best", False),
-        optim=optim_name,  # Use potentially updated optimizer name
+        optim=optim_name,
         # DPO-specific parameters
         beta=getattr(cfg.dpo, "beta", 0.1),
         loss_type=getattr(cfg.dpo, "loss_type", "sigmoid"),
@@ -242,16 +241,40 @@ def dpo_train(
     # Create DPOTrainer with custom optimizer support
     trainer_kwargs = {
         "model": model,
-        "ref_model": ref_model,  # Reference model (can be None to use same model)
+        "ref_model": ref_model,
         "args": dpo_config,
         "train_dataset": train_data,
         "eval_dataset": val_data,
         "processing_class": tokenizer,
     }
 
+    # Only add peft_config if model is not already a PeftModel
+    if not isinstance(model, PeftModel):
+        peft_config = LoraConfig(
+            r=cfg.model.lora.r,
+            lora_alpha=cfg.model.lora.alpha,
+            lora_dropout=cfg.model.lora.dropout,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=[
+                "up_proj",
+                "down_proj",
+                "gate_proj",
+                "k_proj",
+                "q_proj",
+                "v_proj",
+                "o_proj",
+            ],
+            inference_mode=False,
+        )
+        trainer_kwargs["peft_config"] = peft_config
+        logging.info("Added peft_config to DPOTrainer (model is not already a PeftModel)")
+    else:
+        logging.info("Model is already a PeftModel, skipping peft_config in DPOTrainer")
+
     # Add custom optimizer if available
     if custom_optimizer is not None:
-        trainer_kwargs["optimizers"] = (custom_optimizer, None)  # (optimizer, lr_scheduler)
+        trainer_kwargs["optimizers"] = (custom_optimizer, None)
 
     trainer = DPOTrainer(**trainer_kwargs)
 
@@ -259,8 +282,13 @@ def dpo_train(
     log_memory_usage("Before DPO training: ", cfg=cfg)
     comprehensive_memory_cleanup(cfg=cfg)
 
+    # Check if MLflow is enabled for nested run management
+    mlflow_enabled = report_to_backend == "mlflow"
+
     logging.info("Starting DPO training...")
-    trainer.train()
+    # Use nested MLflow run for DPO phase to avoid parameter conflicts
+    with mlflow_phase_run("dpo", enabled=mlflow_enabled):
+        trainer.train()
     logging.info("DPO training completed")
 
     global_steps = trainer.state.global_step

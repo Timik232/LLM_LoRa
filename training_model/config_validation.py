@@ -165,9 +165,9 @@ def validate_paths_config(cfg: DictConfig) -> bool:
 
             work_dir = get_original_cwd()
         else:
-            work_dir = Path.cwd()
+            work_dir = str(Path.cwd())
     except Exception:
-        work_dir = Path.cwd()
+        work_dir = str(Path.cwd())
 
     data_dir = Path(work_dir) / paths_cfg.data_dir
     if not data_dir.exists():
@@ -212,13 +212,7 @@ def validate_dpo_config(cfg: DictConfig) -> bool:
         logger.error(f"Missing required DPO parameters: {missing_params}")
         return False
 
-    try:
-        from hydra.utils import get_original_cwd
-
-        work_dir = Path(get_original_cwd())
-    except Exception:
-        work_dir = Path.cwd()
-
+    work_dir = Path.cwd()
     data_dir = Path(work_dir) / cfg.paths.data_dir
     train_file = data_dir / cfg.dpo.train_data
     val_file = data_dir / cfg.dpo.val_data
@@ -282,13 +276,7 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
         logger.error(f"Missing required GRPO parameters or cfg.paths: {all_missing_params}")
         return False
 
-    try:
-        from hydra.utils import get_original_cwd
-
-        work_dir = Path(get_original_cwd())
-    except Exception:
-        work_dir = Path.cwd()
-
+    work_dir = Path.cwd()
     data_dir = Path(work_dir) / cfg.paths.data_dir
     train_file = data_dir / cfg.grpo.train_data
     val_file = data_dir / cfg.grpo.val_data

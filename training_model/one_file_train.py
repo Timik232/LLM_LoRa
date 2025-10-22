@@ -16,9 +16,8 @@ from typing import Any, cast
 import requests
 import torch
 from datasets import Dataset
-from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
-from peft import LoraConfig, PeftModel
+from peft import LoraConfig, PeftModel, get_peft_model
 from requests.auth import HTTPBasicAuth
 from sklearn.model_selection import train_test_split
 from torch import nn
@@ -52,6 +51,7 @@ from .logging_utils import (
     log_evaluation_metrics,
     log_training_artifacts,
     log_training_config,
+    mlflow_phase_run,
     validate_mlflow_connection,
 )
 from .memory_utils import (
@@ -470,11 +470,7 @@ def data_preparation(
     """
     try:
         # Use current working directory or the configured data directory
-        try:
-            base = Path(get_original_cwd()) / cfg.paths.data_dir
-        except ValueError:
-            # Fallback if Hydra context is not available
-            base = Path.cwd() / cfg.paths.data_dir
+        base = Path.cwd() / cfg.paths.data_dir
 
         # Get data source mode and process accordingly
         data_mode = cfg.testing.data_source_mode
@@ -722,13 +718,70 @@ def setup_model_and_tokenizer(cfg: DictConfig) -> tuple[ModelType, AutoTokenizer
     return model, tokenizer
 
 
+def attach_lora_adapters(model: ModelType, cfg: DictConfig) -> ModelType:
+    """Attach LoRA adapters to a quantized model for fine-tuning.
+
+    This function creates and applies LoRA adapters to a quantized model,
+    enabling fine-tuning on quantized weights (which are normally frozen).
+    This is essential when running GRPO or other training methods without SFT,
+    where the model is loaded in quantized form but needs trainable adapters.
+
+    Args:
+        model: The quantized model to attach LoRA adapters to.
+        cfg: Configuration object containing LoRA parameters.
+
+    Returns:
+        The model with LoRA adapters attached (PeftModel).
+
+    Raises:
+        ConfigurationError: If LoRA configuration creation fails.
+    """
+    try:
+        peft_config = LoraConfig(
+            r=cfg.model.lora.r,
+            lora_alpha=cfg.model.lora.alpha,
+            lora_dropout=cfg.model.lora.dropout,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=[
+                "up_proj",
+                "down_proj",
+                "gate_proj",
+                "k_proj",
+                "q_proj",
+                "v_proj",
+                "o_proj",
+            ],
+            inference_mode=False,
+        )
+        logging.info("LoRA configuration created")
+
+        model = get_peft_model(model, peft_config)
+        logging.info("LoRA adapters attached to model")
+
+        # CRITICAL: Ensure use_cache=False is set on the wrapped model
+        # This prevents incompatibility with gradient checkpointing
+        # Must be done AFTER get_peft_model() to ensure it persists
+        if hasattr(model, "config"):
+            model.config.use_cache = False
+            logging.info("Set model.config.use_cache = False after LoRA attachment")
+
+        if hasattr(model, "base_model") and hasattr(model.base_model, "config"):
+            model.base_model.config.use_cache = False
+            logging.info("Set model.base_model.config.use_cache = False after LoRA attachment")
+
+        return model
+    except Exception as e:
+        raise ConfigurationError(f"Failed to attach LoRA adapters: {e}") from e
+
+
 def run_sft_training(
     model: ModelType,
     tokenizer: AutoTokenizer,
     cfg: DictConfig,
     train_data: Dataset,
     val_data: Dataset,
-) -> tuple[int, float]:
+) -> tuple[int, float, Any]:
     """Run SFT training phase.
 
     Args:
@@ -739,7 +792,8 @@ def run_sft_training(
         val_data: Validation dataset.
 
     Returns:
-        Tuple of (global_steps, eval_loss).
+        Tuple of (global_steps, eval_loss, trained_model).
+        The trained_model is the PeftModel with LoRA adapters attached.
 
     Raises:
         TrainingError: If SFT training fails.
@@ -761,7 +815,6 @@ def run_sft_training(
                 "v_proj",
                 "o_proj",
             ],
-            modules_to_save=["lm_head"],
             inference_mode=False,
         )
     except Exception as e:
@@ -827,6 +880,11 @@ def run_sft_training(
     global_steps = 0
     eval_loss = float("nan")
     trainer = None
+    trained_model = None
+
+    # Check if MLflow is enabled for nested run management
+    mlflow_enabled = report_to_backend == "mlflow"
+
     try:
         # Create SFTTrainer with custom optimizer if available
         trainer_kwargs = {
@@ -843,26 +901,34 @@ def run_sft_training(
             trainer_kwargs["optimizers"] = (custom_optimizer, None)
 
         trainer = SFTTrainer(**trainer_kwargs)
-        trainer.train()
+
+        # Use nested MLflow run for SFT phase to avoid parameter conflicts
+        with mlflow_phase_run("sft", enabled=mlflow_enabled):
+            trainer.train()
+
         global_steps = trainer.state.global_step
         eval_results = trainer.evaluate()
         eval_loss = eval_results.get("eval_loss", float("nan"))
         logging.info(
             f"SFT completed. Global steps: {global_steps}, Evaluation loss: {eval_loss}",
         )
+
+        # Extract the trained PeftModel before cleanup
+        trained_model = trainer.model
+        logging.info(f"Extracted trained model from SFTTrainer: {type(trained_model)}")
     except Exception as e:
         raise TrainingError(f"SFT training failed: {e}") from e
     finally:
         # Clean up SFT trainer to free memory before next training phase
-        # Remove trainer if present
-        # Enhanced SFT training cleanup
         log_memory_usage("Before SFT cleanup: ")
         with contextlib.suppress(NameError):
             if trainer is not None:
+                # Set trainer.model to None to avoid cleanup destroying our reference
+                trainer.model = None
                 cleanup_trainer(trainer, "SFT trainer")
         log_memory_usage("After SFT cleanup: ")
 
-    return global_steps, eval_loss
+    return global_steps, eval_loss, trained_model
 
 
 def train(cfg: DictConfig) -> TrainingResult:
@@ -903,7 +969,7 @@ def train(cfg: DictConfig) -> TrainingResult:
         # Phase 1: Supervised Fine-Tuning (SFT)
         if cfg.training.use_sft:
             try:
-                global_steps, eval_loss = run_sft_training(
+                global_steps, eval_loss, model = run_sft_training(
                     model,
                     tokenizer,
                     cfg,
@@ -918,6 +984,15 @@ def train(cfg: DictConfig) -> TrainingResult:
                     cleanup_dataset(train_data, "SFT train dataset")
                     cleanup_dataset(val_data, "SFT val dataset")
                     log_memory_usage("After SFT dataset cleanup: ", cfg=cfg)
+
+                    # Model is now a PeftModel with trained LoRA adapters
+                    if isinstance(model, PeftModel):
+                        logging.info(
+                            "SFT completed with LoRA adapters. "
+                            "Subsequent phases will continue training the same adapters."
+                        )
+                    else:
+                        logging.warning(f"Expected PeftModel after SFT, but got {type(model)}")
             except Exception as e:
                 raise TrainingError(f"SFT training phase failed: {e}") from e
 
@@ -926,28 +1001,21 @@ def train(cfg: DictConfig) -> TrainingResult:
             logging.info("Starting GRPO training phase...")
 
             try:
-                # If both SFT and GRPO are enabled, load the best checkpoint from SFT
-                if cfg.training.use_sft and training_completed:
-                    logging.info("Loading SFT checkpoint for GRPO training...")
-                    checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
-                    if checkpoint_path.exists():
-                        log_memory_usage("Before SFT->GRPO transition: ")
-                        base = model
-                        # Load the adapter weights into a temporary model to avoid
-                        # rebinding the main `model` variable to a different type.
-                        peft_checkpoint_model = PeftModel.from_pretrained(
-                            cast(Any, base),
-                            str(checkpoint_path),
-                        )
-                        model = cast(Any, peft_checkpoint_model)
-                        cleanup_model(base, "previous model before GRPO")
-                        log_memory_usage("After SFT->GRPO transition: ")
-                        logging.info(f"Loaded SFT checkpoint from {checkpoint_path}")
-                    else:
-                        logging.warning(
-                            f"SFT checkpoint not found at {checkpoint_path}, "
-                            "continuing with current model state",
-                        )
+                # If GRPO runs standalone (without SFT), attach LoRA adapters
+                # to quantized model
+                if not cfg.training.use_sft and cfg.model.quant.enabled:
+                    logging.info(
+                        "GRPO running standalone with quantized model. "
+                        "Attaching LoRA adapters for fine-tuning..."
+                    )
+                    log_memory_usage("Before attaching LoRA for GRPO: ")
+                    model = attach_lora_adapters(model, cfg)
+                    log_memory_usage("After attaching LoRA for GRPO: ")
+                else:
+                    # SFT already attached LoRA adapters, continue training them
+                    logging.info(
+                        "GRPO running after SFT. Continuing to train existing LoRA adapters."
+                    )
 
                 grpo_steps = grpo_train(
                     model=cast(Any, model),
@@ -956,21 +1024,14 @@ def train(cfg: DictConfig) -> TrainingResult:
                     data_preparing_func=None,
                 )
 
-                # Update global steps if GRPO was the only training method or ran after SFT
-                if not cfg.training.use_sft:
-                    global_steps = grpo_steps
-                else:
-                    # If both SFT and GRPO ran, use GRPO steps as the final checkpoint
-                    global_steps = grpo_steps
-
+                # Update global steps from GRPO
+                global_steps = grpo_steps
                 logging.info(f"GRPO completed. Final global steps: {global_steps}")
                 training_completed = True
 
                 # Clean up GRPO datasets after completion if DPO is next
                 if cfg.training.use_dpo:
                     log_memory_usage("Before GRPO dataset cleanup: ", cfg=cfg)
-                    # Note: GRPO datasets are internal to grpo_train function,
-                    # but we can still do general memory cleanup
                     comprehensive_memory_cleanup(cfg=cfg)
                     log_memory_usage("After GRPO dataset cleanup: ", cfg=cfg)
             except Exception as e:
@@ -981,33 +1042,32 @@ def train(cfg: DictConfig) -> TrainingResult:
             logging.info("Starting DPO training phase...")
 
             try:
-                # If previous training phases completed, load the best checkpoint
-                if training_completed:
-                    logging.info("Loading previous checkpoint for DPO training...")
-                    checkpoint_path = Path(cfg.model.new_model) / f"checkpoint-{global_steps}"
-                    if checkpoint_path.exists():
-                        log_memory_usage("Before ->DPO transition: ")
-                        base = model
-                        peft_checkpoint_model = PeftModel.from_pretrained(
-                            cast(Any, base),
-                            str(checkpoint_path),
-                        )
-                        model = cast(Any, peft_checkpoint_model)
-                        cleanup_model(base, "previous model before DPO")
-                        log_memory_usage("After ->DPO transition: ")
-                        logging.info(f"Loaded checkpoint from {checkpoint_path}")
-                    else:
-                        logging.warning(
-                            f"Checkpoint not found at {checkpoint_path}, "
-                            "continuing with current model state",
-                        )
+                # If DPO runs standalone (without SFT or GRPO), attach LoRA adapters
+                if (
+                    not cfg.training.use_sft
+                    and not cfg.training.use_grpo
+                    and cfg.model.quant.enabled
+                ):
+                    logging.info(
+                        "DPO running standalone with quantized model. "
+                        "Attaching LoRA adapters for fine-tuning..."
+                    )
+                    log_memory_usage("Before attaching LoRA for DPO: ")
+                    model = attach_lora_adapters(model, cfg)
+                    log_memory_usage("After attaching LoRA for DPO: ")
+                else:
+                    # Prior training phase(s) already attached
+                    # LoRA adapters, continue training them
+                    logging.info(
+                        "DPO running after prior training phases. "
+                        "Continuing to train existing LoRA adapters."
+                    )
 
                 # Prepare reference model if specified
                 ref_model = None
                 if getattr(cfg.dpo, "use_ref_model", False):
                     ref_model_name = getattr(cfg.dpo, "ref_model_name", cfg.model.model_name)
                     logging.info(f"Loading reference model: {ref_model_name}")
-                    # Load reference model with same configuration as the main model
                     try:
                         torch_dtype = (
                             getattr(torch, cfg.model.torch_dtype)
@@ -1050,8 +1110,6 @@ def train(cfg: DictConfig) -> TrainingResult:
 
                 # Clean up DPO datasets after completion
                 log_memory_usage("Before DPO dataset cleanup: ", cfg=cfg)
-                # Note: DPO datasets are internal to dpo_train function,
-                # but we can still do general memory cleanup
                 comprehensive_memory_cleanup(cfg=cfg)
                 log_memory_usage("After DPO dataset cleanup: ", cfg=cfg)
             except Exception as e:
@@ -1076,10 +1134,9 @@ def train(cfg: DictConfig) -> TrainingResult:
                 logging.info(f"Model merged from checkpoint: {final_checkpoint_path}")
             else:
                 logging.error(f"Final checkpoint not found at {final_checkpoint_path}")
-                # Still try to save the model in its current state
                 merge_adapter_from_checkpoint(
                     base_model_name=cfg.model.model_name,
-                    adapter_dir=cfg.model.new_model,  # Fallback to the output directory
+                    adapter_dir=cfg.model.new_model,
                     save_path=cfg.paths.output_dir,
                     device="cpu",
                 )

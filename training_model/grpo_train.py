@@ -3,20 +3,64 @@
 import json
 import logging
 from collections.abc import Callable
+from logging import Logger
 from pathlib import Path
 from typing import Any
 
+import torch
+from bitsandbytes.nn import Int8Params, Params4bit
 from datasets import Dataset
-from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
-from peft import PeftModel
+from peft import LoraConfig, PeftModel
+from torch import nn
 from transformers import AutoModel, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
 from trl import GRPOConfig, GRPOTrainer
 
-from .logging_utils import get_report_to_backend, log_dataset_samples
+from .logging_utils import get_report_to_backend, log_dataset_samples, mlflow_phase_run
 from .memory_utils import comprehensive_memory_cleanup, log_memory_usage
 from .optimizer_factory import create_optimizer, get_optimizer_config_updates
 from .utils import get_generation_config
+
+
+def convert_model_dtype_for_training(
+    model: PreTrainedModel, target_dtype: torch.dtype, logger: Logger = logging
+) -> PreTrainedModel:
+    """Convert non-quantized model parameters to target dtype.
+
+    Only needed for bfloat16 training. FP16 doesn't need this due to auto-casting.
+    Quantized layers (int4/int8) are skipped to preserve quantization.
+
+    Args:
+        model: The model to convert (can be PeftModel or base model)
+        target_dtype: Target dtype (typically torch.bfloat16)
+        logger: Logger instance for info messages
+
+    Returns:
+        model: Model with converted parameters
+    """
+
+    # Get the base model if it's a PeftModel
+    base_model = model.base_model if hasattr(model, "base_model") else model
+
+    converted_params = []
+    for name, param in base_model.named_parameters():
+        if isinstance(param, Params4bit | Int8Params):
+            continue
+
+        # Convert float32 parameters to target dtype (typically lm_head, embeddings)
+        if param.dtype == torch.float32:
+            param.data = param.data.to(target_dtype)
+            converted_params.append(name)
+
+    if converted_params:
+        logger.info(
+            f"Converted {len(converted_params)} non-quantized parameters to {target_dtype}"
+        )
+        logger.debug(f"Converted parameters: {converted_params}")
+    else:
+        logger.info("No float32 parameters found to convert (all already in correct dtype)")
+
+    return model
 
 
 def validate_grpo_config(cfg: DictConfig) -> bool:
@@ -36,7 +80,7 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
         return False
 
     # Validate data files exist
-    data_dir = Path(get_original_cwd()) / cfg.paths.data_dir
+    data_dir = Path.cwd() / cfg.paths.data_dir
     train_file = data_dir / cfg.grpo.train_data
     val_file = data_dir / cfg.grpo.val_data
 
@@ -79,7 +123,7 @@ def debug_reward_function(test_completions: list[str], correct_answer: str) -> d
     return stats
 
 
-def reward_function(completions: list[str], **kwargs: dict) -> list[float]:
+def reward_function(completions: list[str], **kwargs: Any) -> list[float]:
     """Compute rewards for GRPO training based on action matching.
 
     This function follows TRL's expected signature for reward functions.
@@ -177,7 +221,7 @@ def prepare_grpo_data(
     Returns:
         Tuple[Dataset, Dataset]: Tuple containing train and validation datasets
     """
-    data_dir = Path(get_original_cwd()) / cfg.paths.data_dir
+    data_dir = Path.cwd() / cfg.paths.data_dir
 
     with (data_dir / cfg.grpo.val_data).open(encoding="utf-8") as file:
         test_dataset = json.load(file)
@@ -305,9 +349,9 @@ def grpo_train(
 
     # Test reward function with sample data
     sample_completions = [
-        '{"Content": {"Action": "Разговор"}}',  # Correct format
-        '{"Content": {"Action": "Игра"}}',  # Different action
-        '{"Invalid": "JSON"}',  # Wrong structure
+        '{\\"Content\\": {\\"Action\\": \\"Разговор\\"}}',  # Correct format
+        '{\\"Content\\": {\\"Action\\": \\"Игра\\"}}',  # Different action
+        '{\\"Invalid\\": \\"JSON\\"}',  # Wrong structure
         "Not JSON at all",  # Invalid JSON
         "",  # Empty completion
     ]
@@ -330,9 +374,22 @@ def grpo_train(
         sample = train_data[0]
         logging.debug(f"Sample training data: {sample}")
 
-    logging.debug(type(cfg.grpo.max_completion_length))
-    if cfg.grpo.max_completion_length == "None":
-        cfg.grpo.max_completion_length = tokenizer.model_max_length
+    # Handle max_completion_length with proper defaults
+    if cfg.grpo.max_completion_length is None or cfg.grpo.max_completion_length == "None":
+        # Use global generation max_new_tokens as default (256), not model_max_length
+        cfg.grpo.max_completion_length = getattr(cfg.generation, "max_new_tokens", 256)
+
+    # Validate that completion length is reasonable
+    max_allowed = min(tokenizer.model_max_length - 100, 1024)  # Leave buffer for prompt
+    if cfg.grpo.max_completion_length > max_allowed:
+        logging.warning(
+            f"max_completion_length {cfg.grpo.max_completion_length} exceeds recommended "
+            f"maximum {max_allowed}. This may cause CUDA errors during generation. "
+            f"Capping to {max_allowed}."
+        )
+        cfg.grpo.max_completion_length = max_allowed
+
+    logging.info(f"GRPO max_completion_length set to: {cfg.grpo.max_completion_length}")
 
     # Set up generation config using utility function with GRPO-specific parameters
     generation_config = get_generation_config(cfg, tokenizer, method="grpo")
@@ -360,6 +417,52 @@ def grpo_train(
         getattr(cfg.training, "optim", "adamw_torch"),
     )
 
+    if hasattr(model, "config"):
+        model.config.use_cache = False
+    if hasattr(model, "base_model") and hasattr(model.base_model, "config"):
+        model.base_model.config.use_cache = False
+
+    if cfg.training.gradient_checkpointing:
+
+        def propagate_gradient_checkpointing(module: nn.Module) -> None:
+            """Recursively set gradient_checkpointing=True on all submodules."""
+            if hasattr(module, "gradient_checkpointing"):
+                module.gradient_checkpointing = True
+            for child in module.children():
+                propagate_gradient_checkpointing(child)
+
+        base = model.base_model if hasattr(model, "base_model") else model
+        propagate_gradient_checkpointing(base)
+        logging.info(
+            "Propagated gradient_checkpointing attribute to all submodules (Llama fix)"
+        )
+
+    def patch_generate_no_cache(model_obj: nn.Module) -> None:
+        if not hasattr(model_obj, "generate"):
+            return
+        original_generate = model_obj.generate
+
+        def wrapped_generate(*args: Any, **kwargs: Any) -> Any:
+            kwargs["use_cache"] = False
+
+            # Ensure consistent dtype behavior during generation by using eval mode
+            # This prevents dtype mismatches between model weights (bfloat16) and activations
+            was_training = model_obj.training
+            model_obj.eval()
+            try:
+                return original_generate(*args, **kwargs)
+            finally:
+                if was_training:
+                    model_obj.train()
+
+        model_obj.generate = wrapped_generate
+
+    patch_generate_no_cache(model)
+    if hasattr(model, "base_model"):
+        patch_generate_no_cache(model.base_model)
+
+    logging.info("Patched generate() to enforce use_cache=False and consistent dtype behavior")
+
     grpo_config = GRPOConfig(
         output_dir=cfg.model.new_model,
         per_device_train_batch_size=cfg.training.per_device_train_batch_size,
@@ -384,12 +487,16 @@ def grpo_train(
         # GRPO-specific parameters
         epsilon=getattr(cfg.grpo, "epsilon", 0.2),
         beta=getattr(cfg.grpo, "beta", 0.01),
-        loss_type=getattr(cfg.grpo, "loss_type", "sigmoid"),
+        loss_type=getattr(cfg.grpo, "loss_type", "grpo"),
+        # Integrate generation parameters from generation_config into GRPOConfig
+        temperature=getattr(generation_config, "temperature", 1.0),
+        top_p=getattr(generation_config, "top_p", 1.0),
+        top_k=getattr(generation_config, "top_k", 50),
     )
 
     logging.info(
         f"GRPO Config: epsilon={grpo_config.epsilon}, beta={grpo_config.beta}, "
-        f"loss_type={grpo_config.loss_type}, num_generations={grpo_config.num_generations}",
+        f"loss_type={grpo_config.loss_type}, num_generations={grpo_config.num_generations}, "
     )
 
     # Create GRPOTrainer with custom optimizer support
@@ -400,12 +507,56 @@ def grpo_train(
         "eval_dataset": val_data,
         "processing_class": tokenizer,
         "reward_funcs": reward_func,
-        "generation_config": generation_config,
     }
+
+    # Only add peft_config if model is not already a PeftModel
+    if not isinstance(model, PeftModel):
+        peft_config = LoraConfig(
+            r=cfg.model.lora.r,
+            lora_alpha=cfg.model.lora.alpha,
+            lora_dropout=cfg.model.lora.dropout,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=[
+                "up_proj",
+                "down_proj",
+                "gate_proj",
+                "k_proj",
+                "q_proj",
+                "v_proj",
+                "o_proj",
+            ],
+            inference_mode=False,
+        )
+        trainer_kwargs["peft_config"] = peft_config
+        logging.info("Added peft_config to GRPOTrainer (model is not already a PeftModel)")
+    else:
+        logging.info("Model is already a PeftModel, skipping peft_config in GRPOTrainer")
 
     # Add custom optimizer if available
     if custom_optimizer is not None:
         trainer_kwargs["optimizers"] = (custom_optimizer, None)  # (optimizer, lr_scheduler)
+
+    # Set default dtype based on training configuration to prevent dtype mismatches
+    # BF16 is strict about dtype consistency, FP16 is more forgiving
+    # This ensures all internal tensors (attention masks, etc.)
+    # are created in the correct dtype
+    import torch
+
+    torch_dtype = (
+        torch.bfloat16
+        if cfg.training.bf16
+        else (torch.float16 if cfg.training.fp16 else torch.float32)
+    )
+    old_default_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(torch_dtype)
+    logging.info(f"Set default torch dtype to {torch_dtype} for GRPO training")
+
+    # Convert non-quantized model parameters (lm_head, embeddings) for BF16 only
+    # FP16 doesn't need this as PyTorch auto-casting handles float32/float16 mixing
+    if cfg.training.bf16:
+        model = convert_model_dtype_for_training(model, torch_dtype, logging)
+        logging.info("Applied dtype conversion for BF16 training (lm_head, embeddings)")
 
     trainer = GRPOTrainer(**trainer_kwargs)
 
@@ -413,9 +564,19 @@ def grpo_train(
     log_memory_usage("Before GRPO training: ", cfg=cfg)
     comprehensive_memory_cleanup(cfg=cfg)
 
+    # Check if MLflow is enabled for nested run management
+    mlflow_enabled = report_to_backend == "mlflow"
+
     logging.info("Starting GRPO training...")
-    trainer.train()
-    logging.info("GRPO training completed")
+    try:
+        # Use nested MLflow run for GRPO phase to avoid parameter conflicts
+        with mlflow_phase_run("grpo", enabled=mlflow_enabled):
+            trainer.train()
+        logging.info("GRPO training completed")
+    finally:
+        # Restore original default dtype after training
+        torch.set_default_dtype(old_default_dtype)
+        logging.info(f"Restored default torch dtype to {old_default_dtype}")
 
     global_steps = trainer.state.global_step
 
