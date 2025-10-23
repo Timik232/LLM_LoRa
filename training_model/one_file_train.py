@@ -1201,7 +1201,28 @@ def merge_adapter_from_checkpoint(
             raise ModelLoadingError(f"Failed to load base model {base_model_name}: {e}") from e
 
         try:
-            tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+            # Try loading tokenizer from checkpoint first (includes custom tokens)
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(adapter_dir)
+                logging.info(f"Loaded tokenizer from checkpoint: {adapter_dir}")
+            except Exception:
+                # Fallback: load from base model and apply same modifications as training
+                logging.info(f"Loading tokenizer from base model: {base_model_name}")
+                tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+                tokenizer.padding_side = "right"
+                # Apply same tokenizer modifications as setup_model_and_tokenizer
+                if tokenizer.pad_token is None or tokenizer.pad_token_id is None:
+                    tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
+                    tokenizer.pad_token = "<|pad|>"
+                    if tokenizer.pad_token_id is None:
+                        tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(
+                            tokenizer.pad_token
+                        )
+                    logging.info("Added pad token to tokenizer")
+
+            # Resize model embeddings to match tokenizer vocabulary
+            base_model.resize_token_embeddings(len(tokenizer))
+            logging.info(f"Resized model embeddings to match tokenizer: {len(tokenizer)}")
         except Exception as e:
             raise ModelLoadingError(
                 f"Failed to load tokenizer for {base_model_name}: {e}",

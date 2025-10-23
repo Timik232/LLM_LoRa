@@ -6,6 +6,7 @@ import time
 from deepeval.models import DeepEvalBaseLLM
 from langchain_openai import ChatOpenAI
 from mistralai import Mistral
+from openai import AsyncOpenAI, OpenAI
 
 
 class CustomLocalModel(DeepEvalBaseLLM):
@@ -73,6 +74,7 @@ class CustomLocalModel(DeepEvalBaseLLM):
         """
         msg = await self.model.ainvoke(prompt)
         return msg.content
+
     def get_model_name(self) -> str:
         """
         Get the name of the model.
@@ -194,3 +196,99 @@ class CustomMistralModel(DeepEvalBaseLLM):
             Mistral: The Mistral API client.
         """
         return self.client
+
+
+class CustomOpenAIModel(DeepEvalBaseLLM):
+    """
+    A custom OpenAI-compatible model implementation for DeepEval testing.
+
+    Supports any OpenAI-compatible API (e.g., custom endpoints, local servers).
+
+    Attributes:
+        client (OpenAI): OpenAI-compatible API client.
+        model_name (str): Name of the model.
+        temperature (float): Sampling temperature.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "http://localhost:8000/v1",
+        model_name: str = "your-model",
+        temperature: float = 0.7,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        """
+        Initialize the custom OpenAI-compatible model.
+
+        Args:
+            api_key (str): API key for the service.
+            base_url (str, optional): Base URL for the API endpoint.
+                Defaults to "http://localhost:8000/v1".
+            model_name (str, optional): Name of the model.
+                Defaults to "your-model".
+            temperature (float, optional): Sampling temperature.
+                Defaults to 0.7.
+        """
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.model_name = model_name
+        self.temperature = temperature
+
+    def load_model(self) -> OpenAI:
+        """
+        Load and return the OpenAI client.
+
+        Returns:
+            OpenAI: The OpenAI-compatible API client.
+        """
+        return self.client
+
+    def generate(self, prompt: str) -> str:
+        """
+        Generate a response for the given prompt.
+
+        Args:
+            prompt (str): Input prompt for the model.
+
+        Returns:
+            str: Generated model response.
+        """
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=self.temperature,
+        )
+        return response.choices[0].message.content
+
+    async def a_generate(self, prompt: str, schema: type | None = None) -> str:
+        """
+        Asynchronously generate a response for the given prompt.
+
+        Args:
+            prompt (str): Input prompt for the model.
+            schema (type, optional): Pydantic schema for structured output.
+
+        Returns:
+            str: Generated model response.
+        """
+        kwargs = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": self.temperature,
+        }
+        if schema is not None:
+            kwargs["response_format"] = schema
+
+        response = await self.async_client.chat.completions.create(**kwargs)
+        return response.choices[0].message.content
+
+    def get_model_name(self) -> str:
+        """
+        Get the name of the model.
+
+        Returns:
+            str: Model name.
+        """
+        return self.model_name

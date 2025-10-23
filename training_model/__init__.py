@@ -258,7 +258,7 @@ class LLMLoRaCLI:
         **overrides: dict,
     ) -> None:
         """
-        Run model testing and evaluation.
+        Run model testing and evaluation with optional DeepEval metrics.
 
         Args:
             config_name: Name of the config file (default: config)
@@ -269,12 +269,27 @@ class LLMLoRaCLI:
         Example:
             python main.py test
             python main.py test --manual_setup=False
+            python main.py test testing.deepeval_testing.enabled=true
         """
         self._load_config(config_name, config_dir)
         self._apply_overrides(self.cfg, overrides)
 
         configure_logging(self.cfg.logging.log_level)
         logger = logging.getLogger(__name__)
+
+        # Import DeepEval integration
+        from evaluation.game_evaluation import test_actions
+
+        try:
+            from evaluation.deepeval_integration import (
+                test_game_context_appropriateness,
+                test_russian_language_quality,
+                test_unintended_answer_mention,
+            )
+        except ImportError:
+            test_game_context_appropriateness = None
+            test_russian_language_quality = None
+            test_unintended_answer_mention = None
 
         # Prepare test dataset
         with Path(self.cfg.testing.test_dataset).open(encoding="utf-8") as file:
@@ -284,11 +299,73 @@ class LLMLoRaCLI:
         if manual_setup:
             input("[INFO] Load model into LM Studio and press Enter to continue...")
 
+        # Build test functions list
+        test_functions = [test_actions]
+
+        # Add DeepEval metrics if enabled
+        deepeval_cfg = self.cfg.get("testing", {}).get("deepeval_testing", {})
+        if deepeval_cfg.get("enabled", False) and None not in [
+            test_game_context_appropriateness,
+            test_russian_language_quality,
+            test_unintended_answer_mention,
+        ]:
+            requested_metrics = deepeval_cfg.get("metrics", [])
+            eval_model_type = (
+                self.cfg.get("deepeval", {}).get("evaluation_model", {}).get("type", "mistral")
+            )
+            logger.info(
+                f"DeepEval testing enabled. Model type:"
+                f" {eval_model_type}, Metrics: {requested_metrics}"
+            )
+
+            def wrapper_unintended_answer_mention(
+                model_answer: str, correct_answer: str, **kwargs: dict
+            ) -> bool:
+                user_input = kwargs.get("user_input", "")
+                return test_unintended_answer_mention(
+                    self.cfg, user_input, model_answer, correct_answer
+                )
+
+            def wrapper_russian_language_quality(
+                model_answer: str, correct_answer: str, **kwargs: dict
+            ) -> bool:
+                return test_russian_language_quality(self.cfg, model_answer)
+
+            def wrapper_game_context_appropriateness(
+                model_answer: str, correct_answer: str, **kwargs: dict
+            ) -> bool:
+                available_actions = kwargs.get("available_actions", [])
+                user_input = kwargs.get("user_input")
+                return test_game_context_appropriateness(
+                    self.cfg, model_answer, available_actions, user_input
+                )
+
+            metric_mapping = {
+                "unintended_answer_mention": wrapper_unintended_answer_mention,
+                "russian_language_quality": wrapper_russian_language_quality,
+                "game_context_appropriateness": wrapper_game_context_appropriateness,
+            }
+
+            for metric_name in requested_metrics:
+                if metric_name in metric_mapping:
+                    test_functions.append(metric_mapping[metric_name])
+                    logger.info(f"✓ Added DeepEval metric: {metric_name}")
+
         logger.info("[INFO] Running model evaluation...")
+        if len(test_functions) == 1:
+            logger.info("Running action validation only")
+        else:
+            logger.info(
+                f"Running {len(test_functions)}"
+                f" test functions (action validation + "
+                f"{len(test_functions)-1} DeepEval metrics)"
+            )
+
         test_llm(
             self.cfg,
             path_test_dataset=self.cfg.testing.test_dataset,
             test_file=self.cfg.testing.output_test_file,
+            test_func=test_functions,
         )
         logger.info("[SUCCESS] Testing completed successfully!")
 

@@ -5,7 +5,7 @@ defaults:
 
 
 model:
-  model_name: "ibm-granite/granite-3.1-8b-instruct"
+  model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
   new_model: "4b-chat-vika"
   torch_dtype: "bfloat16"
   attn_implementation: "flash_attention_2"
@@ -90,7 +90,7 @@ data_preparation:
   # game: Complex game format with history, actions, and system messages
 
 grpo:
-  val_data: "test_ru.json"
+  val_data: "test_ru_extended.json"
   train_data: "dataset_ru.json"
   max_completion_length: None
   num_generations: 2
@@ -162,8 +162,8 @@ optuna:
 
 paths:
   data_dir: "data"
-  test_data: "test_ru.json"
-  train_data: "dataset_ru.json"
+  test_data: "test_ru_extended.json"
+  train_data: "dataset_ru_extended.json"
   gguf_directory: custom-model
   merged_model_path: "merged_model_fp16"
   output_dir: "models" # if you change this, change in run_pipeline
@@ -179,7 +179,7 @@ other:
   hf_login: false
 
 environment:
-  use_dotenv: false  # Set to true for local development, false for Docker/production
+  use_dotenv: true  # Set to true for local development, false for Docker/production
 
 testing:
   data_source_mode: "separate_validation"  # Options: "auto_split", "separate_validation", "separate_files"
@@ -187,9 +187,42 @@ testing:
   val_data_file: "test_ru.json"  # Validation file used for separate_validation mode
   manual_lmstudio_test: false # use only for local run
   test: true
-  test_dataset: "${paths.data_dir}/test_ru.json"
+  test_dataset: "${paths.data_dir}/test_ru_extended.json"
   output_test_file: "../test.json"
   prompt_for_deepeval: "test_prompt"
+
+  deepeval_testing:
+    enabled: true  # Enable DeepEval metrics alongside action validation (default: false for backward compatibility)
+    run_all_metrics: true  # Run all metrics or just action check
+    metrics:  # Which DeepEval metrics to run
+      - unintended_answer_mention     # Detects when model reveals the answer
+      - russian_language_quality      # Validates Russian grammar and spelling
+      - game_context_appropriateness  # Checks game context correctness
+
+deepeval:
+  enabled: true
+
+  evaluation_model:
+    type: "custom"  # Options: "mistral", "local", "custom"
+    threshold: 0.7
+    verbose_mode: true
+
+  mistral:
+    api_key: "${oc.env:MISTRAL_API,}"
+    model_name: "mistral-small-latest"
+    temperature: 0.7
+
+  local_model:
+    base_url: "http://localhost:4141"
+    model_name: "gpt-5-mini"
+    timeout: 30
+
+  custom_api:
+    endpoint: "http://localhost:4141"
+    api_key: "${oc.env:CUSTOM_API_KEY,}"
+    model_name: "gpt-5-mini"
+    temperature: 0.7
+    timeout: 30
 
 logging:
   log_level: "INFO"  # Logging level: "DEBUG" or "INFO"

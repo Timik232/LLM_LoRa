@@ -224,7 +224,7 @@ def run_tests(
 
         if test_func is not None:
             try:
-                test_func(prompt, model_answer, correct_answer)
+                test_func(model_answer, correct_answer)
                 passed_test += 1
             except AssertionError:
                 logger = logging.getLogger(__name__)
@@ -281,6 +281,8 @@ def test_llm(
         client = ollama_client
     for test in test_func:
         try:
+            logger = logging.getLogger(__name__)
+            logger.info(f"Running test function: {test.__name__}")
             run_tests(
                 cfg=cfg,
                 client=client,
@@ -289,9 +291,11 @@ def test_llm(
                 test_func=test,
                 use_ollama=use_ollama,
             )
-        except Exception:
+            logger.info(f"✓ Test function {test.__name__} completed successfully")
+        except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.exception(f"Test function {test.__name__} failed with error")
+            logger.error(f"✗ Test function {test.__name__} failed with error:")
+            logger.exception(e)
 
 
 def llamacpp_execute_test(
