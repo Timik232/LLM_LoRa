@@ -144,11 +144,22 @@ class LLMLoRaCLI:
         configure_logging(self.cfg.logging.log_level)
         logger = logging.getLogger(__name__)
 
+        # Auto-disable GGUF during Optuna trials to save time and disk space
+        if self.cfg.optuna.enabled:
+            logger.info("[OPTUNA] Auto-disabling GGUF conversion during optimization trials")
+            logger.info(
+                "[OPTUNA] (Only training time will be measured, "
+                "GGUF will be created for best model separately)"
+            )
+            self.cfg.model.quant.convert_to_gguf = False
+
         # Validate configuration before optimization
         logger.info("Validating configuration...")
         if not validate_complete_config(self.cfg):
             logger.error("Configuration validation failed - aborting optimization")
             raise ValueError("Configuration validation failed")
+
+        logger.info("[OPTUNA] Running Optuna hyperparameter optimization command")
 
         # Use current working directory since get_original_cwd() requires Hydra decorator
         data_dir = Path.cwd() / self.cfg.paths.data_dir
@@ -285,7 +296,6 @@ class LLMLoRaCLI:
         self,
         config_name: str = "config",
         config_dir: str | None = None,
-        use_optuna: bool = False,
         skip_test: bool = False,
         **overrides: dict,
     ) -> None:
@@ -295,13 +305,12 @@ class LLMLoRaCLI:
         Args:
             config_name: Name of the config file (default: config)
             config_dir: Path to config directory (default: ./conf)
-            use_optuna: Use Optuna optimization instead of standard training
             skip_test: Skip testing phase
             **overrides: Configuration overrides
 
         Example:
             python main.py pipeline
-            python main.py pipeline --use_optuna=True
+            python main.py pipeline optuna.enabled=true
             python main.py pipeline --skip_test=True
         """
         self._load_config(config_name, config_dir)
@@ -318,10 +327,14 @@ class LLMLoRaCLI:
             logger.error("Configuration validation failed - aborting pipeline")
             raise ValueError("Configuration validation failed")
 
-        # Training phase
-        if use_optuna:
+        # Training phase - use Optuna if enabled in config
+        if self.cfg.optuna.enabled:
+            logger.info(
+                "[OPTUNA] Optuna optimization enabled - " "starting HPO study with training"
+            )
             self.optimize(config_name, config_dir, **overrides)
         else:
+            logger.info("[INFO] Standard training mode (Optuna disabled)")
             self.train(config_name, config_dir, **overrides)
 
         # Conversion phase

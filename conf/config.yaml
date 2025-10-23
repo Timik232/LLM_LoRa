@@ -135,8 +135,8 @@ dpo:
   ref_model_name: null # Reference model name (if different from base model)
 
 optuna:
-  enabled: false                    # Enable/disable Optuna hyperparameter optimization
-  n_trials: 10                      # Number of trials to run
+  enabled: true                   # Enable/disable Optuna hyperparameter optimization
+  n_trials: 20                      # Number of trials to run
 
   # Hyperparameter search spaces - set enabled to false to disable tuning for that parameter
   learning_rate:
@@ -205,7 +205,7 @@ logging:
     log_artifacts: false
 
   dataset_logging:
-    enabled: true                    # Enable dataset sample logging before training
+    enabled: false                    # Enable dataset sample logging before training
     log_level: "INFO"               # Log level for dataset samples: "DEBUG", "INFO", "WARNING"
     num_samples: 5                  # Number of samples to log from each dataset
     log_raw_data: true              # Log samples before processing/preparation

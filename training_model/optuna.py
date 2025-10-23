@@ -32,11 +32,14 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
         ValueError: If 'eval_loss' is not present in the training metrics.
     """
     try:
+        logger.info(f"[OPTUNA] Starting trial #{trial.number}")
+
         # Clear any existing Hydra instance
         if GlobalHydra().is_initialized():
             GlobalHydra.instance().clear()
 
         overrides = []
+        suggested_params = {}
 
         if cfg.optuna.learning_rate.enabled:
             lr = trial.suggest_float(
@@ -46,6 +49,7 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
                 log=cfg.optuna.learning_rate.log_scale,
             )
             overrides.append(f"training.learning_rate={lr}")
+            suggested_params["learning_rate"] = lr
 
         if cfg.optuna.num_train_epochs.enabled:
             epochs = trial.suggest_float(
@@ -54,6 +58,7 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
                 cfg.optuna.num_train_epochs.max,
             )
             overrides.append(f"training.num_train_epochs={epochs}")
+            suggested_params["num_train_epochs"] = epochs
 
         if cfg.optuna.weight_decay.enabled:
             weight_decay = trial.suggest_float(
@@ -62,6 +67,7 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
                 cfg.optuna.weight_decay.max,
             )
             overrides.append(f"training.weight_decay={weight_decay}")
+            suggested_params["weight_decay"] = weight_decay
 
         if cfg.optuna.warmup_steps.enabled:
             warmup_steps = trial.suggest_int(
@@ -70,6 +76,11 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
                 cfg.optuna.warmup_steps.max,
             )
             overrides.append(f"training.warmup_steps={warmup_steps}")
+            suggested_params["warmup_steps"] = warmup_steps
+
+        overrides.append("model.quant.convert_to_gguf=false")
+
+        logger.info(f"[OPTUNA] Trial #{trial.number} suggested parameters: {suggested_params}")
 
         with initialize(
             version_base="1.1",
@@ -85,10 +96,12 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
         loss = metrics.get("eval_loss")
         if loss is None:
             raise ValueError("train(cfg) did not return 'eval_loss' in metrics")
+
+        logger.info(f"[OPTUNA] Trial #{trial.number} completed with eval_loss: {loss}")
         return float(loss)
     except Exception as e:
         logger.exception(
-            "Trial #%s encountered an error: %s",
+            "[OPTUNA] Trial #%s encountered an error: %s",
             trial.number,
             e,
         )
@@ -102,11 +115,54 @@ def optuna_optimize(data_dir: str, cfg: DictConfig) -> None:
         data_dir: Path to the training data directory.
         cfg: Initial configuration dictionary.
     """
+    logger.info("[OPTUNA] ========================================")
+    logger.info("[OPTUNA] Starting Optuna Hyperparameter Optimization Study")
+    logger.info("[OPTUNA] ========================================")
+
+    logger.info(f"[OPTUNA] Total trials: {cfg.optuna.n_trials}")
+    logger.info("[OPTUNA] Search space configuration:")
+
+    if cfg.optuna.learning_rate.enabled:
+        logger.info(
+            f"[OPTUNA]   - learning_rate: "
+            f"[{cfg.optuna.learning_rate.min}, {cfg.optuna.learning_rate.max}] "
+            f"(log_scale: {cfg.optuna.learning_rate.log_scale})"
+        )
+    else:
+        logger.info("[OPTUNA]   - learning_rate: DISABLED")
+
+    if cfg.optuna.num_train_epochs.enabled:
+        logger.info(
+            f"[OPTUNA]   - num_train_epochs:"
+            f" [{cfg.optuna.num_train_epochs.min}, {cfg.optuna.num_train_epochs.max}]"
+        )
+    else:
+        logger.info("[OPTUNA]   - num_train_epochs: DISABLED")
+
+    if cfg.optuna.weight_decay.enabled:
+        logger.info(
+            f"[OPTUNA]   - weight_decay: "
+            f"[{cfg.optuna.weight_decay.min}, {cfg.optuna.weight_decay.max}]"
+        )
+    else:
+        logger.info("[OPTUNA]   - weight_decay: DISABLED")
+
+    if cfg.optuna.warmup_steps.enabled:
+        logger.info(
+            f"[OPTUNA]   - warmup_steps: "
+            f"[{cfg.optuna.warmup_steps.min}, {cfg.optuna.warmup_steps.max}]"
+        )
+    else:
+        logger.info("[OPTUNA]   - warmup_steps: DISABLED")
+
     study = optuna.create_study(
         direction="minimize",
         sampler=optuna.samplers.TPESampler(),
         pruner=optuna.pruners.HyperbandPruner(min_resource=1, reduction_factor=3),
     )
+
+    logger.info("[OPTUNA] Study created with TPESampler and HyperbandPruner")
+    logger.info("[OPTUNA] ========================================")
 
     def run_trial(trial: optuna.Trial) -> float:
         """Wrapper to pass data_dir and cfg into the objective."""
@@ -114,14 +170,21 @@ def optuna_optimize(data_dir: str, cfg: DictConfig) -> None:
 
     study.optimize(run_trial, n_trials=cfg.optuna.n_trials)
 
-    logger.info("Best trial:")
-    logger.info(f"  Loss: {study.best_value}")
-    logger.info("  Params:")
+    logger.info("[OPTUNA] ========================================")
+    logger.info("[OPTUNA] Optimization study completed!")
+    logger.info("[OPTUNA] ========================================")
+    logger.info(f"[OPTUNA] Best trial number: {study.best_trial.number}")
+    logger.info(f"[OPTUNA] Best loss: {study.best_value}")
+    logger.info("[OPTUNA] Best parameters:")
     for key, val in study.best_params.items():
-        logger.info(f"    {key}: {val}")
+        logger.info(f"[OPTUNA]   - {key}: {val}")
+
+    logger.info("[OPTUNA] Saving best configuration...")
 
     with initialize(version_base="1.1", config_path="../conf", job_name="optuna_final"):
         best_overrides = [f"{k}={v}" for k, v in study.best_params.items()]
         best_cfg: DictConfig = compose(config_name="config", overrides=best_overrides)
         OmegaConf.save(best_cfg, "best_config.yaml")
-    logger.info("Saved best configuration to best_config.yaml")
+
+    logger.info("[OPTUNA] Saved best configuration to best_config.yaml")
+    logger.info("[OPTUNA] ========================================")
