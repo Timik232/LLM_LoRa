@@ -91,6 +91,7 @@ ignore = ["E203", "W605", "PLR0913", "PLR0915", "PLR2004", "COM812",
 "vk_bot/*" = ["N999", "ANN001", "ANN201"]
 "training_model/*" = ["S105", "SIM108"]
 "legacy/*" = ["ALL"]
+"tools/*" = ["ALL"]
 "training_model/types.py" = ["UP007", "PYI036"]
 "tests/*" = ["ANN001"]
 

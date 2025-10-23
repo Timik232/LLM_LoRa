@@ -5,7 +5,7 @@ defaults:
 
 
 model:
-  model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
+  model_name: "ibm-granite/granite-3.1-8b-instruct"
   new_model: "4b-chat-vika"
   torch_dtype: "bfloat16"
   attn_implementation: "flash_attention_2"
@@ -46,14 +46,14 @@ training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 6
-  num_train_epochs: 2
+  num_train_epochs: 2.15
   eval_steps: 50
   logging_steps: 5
-  warmup_steps: 10
-  learning_rate: 1e-4
+  warmup_steps: 5
+  learning_rate: 3.26e-05
   fp16: false
   bf16: true
-  weight_decay: 0.05
+  weight_decay: 0.03
   max_seq_length: 2048
   optim: "paged_adamw_8bit"
   neftune_noise_alpha: 0
@@ -135,20 +135,20 @@ dpo:
   ref_model_name: null # Reference model name (if different from base model)
 
 optuna:
-  enabled: true                   # Enable/disable Optuna hyperparameter optimization
+  enabled: false                   # Enable/disable Optuna hyperparameter optimization
   n_trials: 20                      # Number of trials to run
 
   # Hyperparameter search spaces - set enabled to false to disable tuning for that parameter
   learning_rate:
     enabled: true
     min: 1e-6
-    max: 5e-5
+    max: 1e-4
     log_scale: true
 
   num_train_epochs:
     enabled: true
     min: 0.5
-    max: 2.0
+    max: 5.0
 
   weight_decay:
     enabled: true
@@ -158,7 +158,7 @@ optuna:
   warmup_steps:
     enabled: true
     min: 0
-    max: 500
+    max: 30
 
 paths:
   data_dir: "data"
