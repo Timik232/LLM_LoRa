@@ -758,6 +758,11 @@ def grpo_train(
         temperature=getattr(generation_config, "temperature", 1.0),
         top_p=getattr(generation_config, "top_p", 1.0),
         top_k=getattr(generation_config, "top_k", 50),
+        # VLLM integration (TRL native support)
+        use_vllm=getattr(cfg.grpo, "use_vllm", False),
+        vllm_mode=getattr(cfg.grpo, "vllm_mode", "colocate"),
+        vllm_gpu_memory_utilization=getattr(cfg.grpo, "vllm_gpu_memory_utilization", 0.9),
+        vllm_server_host=getattr(cfg.grpo, "vllm_server_host", None),
     )
 
     logging.info(

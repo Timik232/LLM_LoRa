@@ -871,7 +871,7 @@ def run_sft_training(
             save_total_limit=cfg.training.save_total_limit,
             load_best_model_at_end=cfg.training.load_best,
         )
-        if cfg.training.use_optuna_optimize:
+        if cfg.optuna.enabled:
             sft_config.run_name = f"{sft_config.run_name}_optuna"
     except Exception as e:
         raise ConfigurationError(f"Failed to create SFT configuration: {e}") from e

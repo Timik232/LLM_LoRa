@@ -63,8 +63,6 @@ The configuration is organized into several sections controlling different aspec
       use_grpo: false
       use_sft: true
       use_dpo: false
-      use_optuna_optimize: false
-      optuna_n_trials: 10
       seed: 42
       adam_mini:
         enabled: true  # Enable Adam-mini optimizer (default: false, uses standard optimizer)
@@ -419,12 +417,6 @@ Training Configuration
     * - load_best
       - Load best model at end
       - false
-    * - use_optuna_optimize
-      - Use Optuna for hyperparameter optimization
-      - false
-    * - optuna_n_trials
-      - Number of Optuna trials
-      - 10
     * - seed
       - Random seed
       - 42
@@ -600,6 +592,119 @@ DPO Configuration
     * - ref_model_name
       - Reference model name (if different from base model)
       - null
+
+Optuna Hyperparameter Optimization Configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``optuna`` section provides configurable hyperparameter optimization with the ability to enable/disable individual parameters.
+
+.. list-table:: Optuna Parameters
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - enabled
+      - Enable/disable Optuna hyperparameter optimization
+      - false
+    * - n_trials
+      - Number of optimization trials
+      - 10
+
+**Hyperparameter Search Spaces:**
+
+Each hyperparameter can be independently enabled or disabled:
+
+.. list-table:: Learning Rate Configuration (optuna.learning_rate)
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - enabled
+      - Enable learning rate tuning
+      - true
+    * - min
+      - Minimum learning rate value
+      - 1e-6
+    * - max
+      - Maximum learning rate value
+      - 5e-5
+    * - log_scale
+      - Use log scale for sampling
+      - true
+
+.. list-table:: Epochs Configuration (optuna.num_train_epochs)
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - enabled
+      - Enable epochs tuning
+      - true
+    * - min
+      - Minimum number of epochs
+      - 0.5
+    * - max
+      - Maximum number of epochs
+      - 2.0
+
+.. list-table:: Weight Decay Configuration (optuna.weight_decay)
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - enabled
+      - Enable weight decay tuning
+      - true
+    * - min
+      - Minimum weight decay value
+      - 0.0
+    * - max
+      - Maximum weight decay value
+      - 0.3
+
+.. list-table:: Warmup Steps Configuration (optuna.warmup_steps)
+    :widths: 25 50 25
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+    * - enabled
+      - Enable warmup steps tuning
+      - true
+    * - min
+      - Minimum warmup steps
+      - 0
+    * - max
+      - Maximum warmup steps
+      - 500
+
+**Usage Examples:**
+
+.. code-block:: bash
+
+    # Enable Optuna with default search spaces
+    python main.py optuna.enabled=true
+
+    # Disable learning rate tuning, keep others enabled
+    python main.py optuna.enabled=true optuna.learning_rate.enabled=false
+
+    # Run with more trials
+    python main.py optuna.enabled=true optuna.n_trials=50
+
+    # Customize search space for learning rate
+    python main.py optuna.enabled=true optuna.learning_rate.min=1e-5 optuna.learning_rate.max=1e-4
+
+    # Disable all tuning except learning rate
+    python main.py optuna.enabled=true optuna.num_train_epochs.enabled=false optuna.weight_decay.enabled=false optuna.warmup_steps.enabled=false
 
 Paths Configuration
 ~~~~~~~~~~~~~~~~~~~

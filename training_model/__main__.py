@@ -46,7 +46,7 @@ def main(cfg: DictConfig) -> None:
 
     # Ensure the data directory exists
     data_dir.mkdir(parents=True, exist_ok=True)
-    if cfg.training.use_optuna_optimize:
+    if cfg.optuna.enabled:
         optuna_optimize(data_dir, cfg)
     else:
         main_train(data_dir, cfg)

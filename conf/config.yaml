@@ -46,7 +46,7 @@ training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 6
-  num_train_epochs: 0.1
+  num_train_epochs: 2
   eval_steps: 50
   logging_steps: 5
   warmup_steps: 10
@@ -60,11 +60,9 @@ training:
   gradient_checkpointing: true
   save_total_limit: 5
   load_best: false
-  use_grpo: true
+  use_grpo: false
   use_sft: true
   use_dpo: false
-  use_optuna_optimize: false
-  optuna_n_trials: 10
   seed: 42
   adam_mini:
     enabled: false  # Enable Adam-mini optimizer (default: false, uses standard optimizer)
@@ -116,6 +114,12 @@ grpo:
   # Reference model settings (optional - uses same model by default)
   use_ref_model: false  # Whether to use a separate reference model
   ref_model_name: null  # Reference model name (if different from base model)
+  # VLLM integration (TRL native support for faster generation)
+  use_vllm: false                      # Enable VLLM for accelerated batch generation (Linux/Docker only)
+  vllm_mode: "colocate"                # "server" (separate process) or "colocate" (same process)
+  vllm_gpu_memory_utilization: 0.9     # GPU memory utilization ratio for VLLM (0.0-1.0)
+  vllm_enable_sleep_mode: false        # Offload VLLM to CPU during training to save GPU memory
+  vllm_server_host: null               # Server IP/host (only used with vllm_mode="server")
 
 dpo:
   val_data: "dpo_test.json"
@@ -129,6 +133,32 @@ dpo:
   # Reference model settings (optional - uses same model by default)
   use_ref_model: false # Whether to use a separate reference model for DPO
   ref_model_name: null # Reference model name (if different from base model)
+
+optuna:
+  enabled: false                    # Enable/disable Optuna hyperparameter optimization
+  n_trials: 10                      # Number of trials to run
+
+  # Hyperparameter search spaces - set enabled to false to disable tuning for that parameter
+  learning_rate:
+    enabled: true
+    min: 1e-6
+    max: 5e-5
+    log_scale: true
+
+  num_train_epochs:
+    enabled: true
+    min: 0.5
+    max: 2.0
+
+  weight_decay:
+    enabled: true
+    min: 0.0
+    max: 0.3
+
+  warmup_steps:
+    enabled: true
+    min: 0
+    max: 500
 
 paths:
   data_dir: "data"

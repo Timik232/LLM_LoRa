@@ -36,22 +36,46 @@ def objective(trial: optuna.Trial, data_dir: str, cfg: DictConfig) -> float:
         if GlobalHydra().is_initialized():
             GlobalHydra.instance().clear()
 
-        lr = trial.suggest_float("training.learning_rate", 1e-6, 5e-5, log=True)
-        epochs = trial.suggest_float("training.num_train_epochs", 0.5, 2)
-        weight_decay = trial.suggest_float("training.weight_decay", 0.0, 0.3)
-        warmup_steps = trial.suggest_int("training.warmup_steps", 0, 500)
+        overrides = []
+
+        if cfg.optuna.learning_rate.enabled:
+            lr = trial.suggest_float(
+                "training.learning_rate",
+                cfg.optuna.learning_rate.min,
+                cfg.optuna.learning_rate.max,
+                log=cfg.optuna.learning_rate.log_scale,
+            )
+            overrides.append(f"training.learning_rate={lr}")
+
+        if cfg.optuna.num_train_epochs.enabled:
+            epochs = trial.suggest_float(
+                "training.num_train_epochs",
+                cfg.optuna.num_train_epochs.min,
+                cfg.optuna.num_train_epochs.max,
+            )
+            overrides.append(f"training.num_train_epochs={epochs}")
+
+        if cfg.optuna.weight_decay.enabled:
+            weight_decay = trial.suggest_float(
+                "training.weight_decay",
+                cfg.optuna.weight_decay.min,
+                cfg.optuna.weight_decay.max,
+            )
+            overrides.append(f"training.weight_decay={weight_decay}")
+
+        if cfg.optuna.warmup_steps.enabled:
+            warmup_steps = trial.suggest_int(
+                "training.warmup_steps",
+                cfg.optuna.warmup_steps.min,
+                cfg.optuna.warmup_steps.max,
+            )
+            overrides.append(f"training.warmup_steps={warmup_steps}")
 
         with initialize(
             version_base="1.1",
             config_path="../conf",
             job_name=f"optuna_hpo_trial_{trial.number}",
         ):
-            overrides = [
-                f"training.learning_rate={lr}",
-                f"training.num_train_epochs={epochs}",
-                f"training.weight_decay={weight_decay}",
-                f"training.warmup_steps={warmup_steps}",
-            ]
             cfg: DictConfig = compose(config_name="config", overrides=overrides)
 
             train_module = "training_model.one_file_train"
@@ -88,7 +112,7 @@ def optuna_optimize(data_dir: str, cfg: DictConfig) -> None:
         """Wrapper to pass data_dir and cfg into the objective."""
         return objective(trial, data_dir, cfg)
 
-    study.optimize(run_trial, n_trials=cfg.training.optuna_n_trials)
+    study.optimize(run_trial, n_trials=cfg.optuna.n_trials)
 
     logger.info("Best trial:")
     logger.info(f"  Loss: {study.best_value}")
