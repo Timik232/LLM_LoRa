@@ -46,7 +46,7 @@ training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 6
-  num_train_epochs: 1
+  num_train_epochs: 0.1
   eval_steps: 50
   logging_steps: 5
   warmup_steps: 10
@@ -99,8 +99,14 @@ grpo:
   use_cache: false
   # GRPO-specific hyperparameters
   epsilon: 0.2  # KL penalty coefficient for policy gradient
-  beta: 0.1    # KL regularization parameter
+  beta: 0    # KL regularization parameter
   loss_type: "dr_grpo"
+  # Reward function configuration
+  reward_function:
+    type: "combined"  # Options: "original" (strict JSON), "json_validation", "action_extraction", "combined"
+    json_weight: 0.3  # Weight for JSON format validation (0.0-1.0)
+    action_weight: 0.7  # Weight for action extraction correctness (0.0-1.0)
+    # Note: weights are normalized, so they don't need to sum to 1.0
   # Generation parameters (maintained for backward compatibility, but can reference global defaults)
   temperature: ${generation.temperature}      # Sampling temperature for generation
   top_k: ${generation.top_k}                  # Top-k sampling parameter

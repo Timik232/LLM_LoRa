@@ -97,30 +97,53 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
 
 
 def debug_reward_function(test_completions: list[str], correct_answer: str) -> dict[str, Any]:
-    """Test the reward function with sample completions for debugging.
+    """Test reward functions with sample completions for debugging.
+
+    Reports metrics for all three reward functions:
+    original, JSON validation, and action extraction.
 
     Args:
         test_completions: List of test completions to evaluate
         correct_answer: Expected correct answer
 
     Returns:
-        Dictionary with test results and statistics
+        Dictionary with test results and statistics for all functions
     """
-    logging.info("Testing reward function...")
+    logging.info("Testing all reward functions...")
 
-    results = reward_function(test_completions, correct_answer=correct_answer)
+    original_rewards = reward_function(test_completions, correct_answer=correct_answer)
+    json_validation_rewards = reward_function_json_validation(
+        test_completions, correct_answer=correct_answer
+    )
+    action_extraction_rewards = reward_function_action_extraction(
+        test_completions, correct_answer=correct_answer
+    )
+    combined_rewards = reward_function_combined(
+        test_completions, correct_answer=correct_answer
+    )
 
-    stats = {
-        "total_completions": len(test_completions),
-        "positive_rewards": sum(1 for r in results if r > 0),
-        "zero_rewards": sum(1 for r in results if r == 0),
-        "negative_rewards": sum(1 for r in results if r < 0),
-        "average_reward": sum(results) / len(results) if results else 0,
-        "rewards": results,
+    def compute_stats(rewards: list[float], name: str) -> dict[str, Any]:
+        stats = {
+            "total_completions": len(rewards),
+            "positive_rewards": sum(1 for r in rewards if r > 0),
+            "zero_rewards": sum(1 for r in rewards if r == 0),
+            "negative_rewards": sum(1 for r in rewards if r < 0),
+            "average_reward": sum(rewards) / len(rewards) if rewards else 0,
+            "rewards": rewards,
+        }
+        logging.info(f"{name} results: {stats}")
+        return stats
+
+    result = {
+        "original": compute_stats(original_rewards, "Original reward function"),
+        "json_validation": compute_stats(json_validation_rewards, "JSON validation function"),
+        "action_extraction": compute_stats(
+            action_extraction_rewards, "Action extraction function"
+        ),
+        "combined": compute_stats(combined_rewards, "Combined reward function"),
     }
 
-    logging.info(f"Reward function test results: {stats}")
-    return stats
+    return result
 
 
 def reward_function(completions: list[str], **kwargs: Any) -> list[float]:
@@ -208,6 +231,214 @@ def reward_function(completions: list[str], **kwargs: Any) -> list[float]:
             raise
 
     return rewards
+
+
+def reward_function_json_validation(completions: list[str], **kwargs: Any) -> list[float]:
+    """Validate JSON structure only, without checking action correctness.
+
+    Returns 1.0 for valid JSON with proper structure, -1.0 otherwise.
+    This function measures format compliance independently.
+
+    Args:
+        completions (List[str]): List of model-generated completions
+        **kwargs: Additional keyword arguments (unused)
+
+    Returns:
+        List[float]: List of reward values (1.0 for valid structure, -1.0 for invalid)
+    """
+    rewards: list[float] = []
+
+    for i, raw_completion in enumerate(completions):
+        try:
+            completion = raw_completion.strip()
+            if not completion:
+                logging.debug(f"Completion {i} is empty, format validation failed")
+                rewards.append(-1.0)
+                continue
+
+            parsed = json.loads(completion)
+
+            if not isinstance(parsed, dict):
+                logging.debug(f"Completion {i} is not a JSON object")
+                rewards.append(-1.0)
+                continue
+
+            content = parsed.get("Content")
+            if not isinstance(content, dict):
+                logging.debug(f"Completion {i} missing or invalid 'Content' field")
+                rewards.append(-1.0)
+                continue
+
+            action = content.get("Action")
+            if action is None:
+                logging.debug(f"Completion {i} missing 'Action' field in Content")
+                rewards.append(-1.0)
+                continue
+
+            # Valid structure found
+            logging.debug(f"Completion {i} passed JSON format validation")
+            rewards.append(1.0)
+
+        except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
+            logging.debug(f"Completion {i} JSON validation failed: {type(e).__name__}")
+            rewards.append(-1.0)
+        except Exception as e:
+            logging.error(f"Unexpected error in JSON validation for completion {i}: {e}")
+            rewards.append(-1.0)
+
+    return rewards
+
+
+def reward_function_action_extraction(completions: list[str], **kwargs: Any) -> list[float]:
+    """Extract and validate action without strict JSON requirement.
+
+    Uses multiple extraction strategies with fallbacks:
+    1. JSON parsing (preferred)
+    2. Regex pattern matching
+    3. String search for "Action:" keyword
+
+    Returns 1.0 for correct action, 0.0 for
+    extracted but wrong action, -1.0 if extraction fails.
+
+    Args:
+        completions (List[str]): List of model-generated completions
+        **kwargs: Dataset row containing 'correct_answer'
+
+    Returns:
+        List[float]: List of reward values based on action correctness
+    """
+    correct_answer: str | None = kwargs.get("correct_answer")
+    logging.debug("Testing action extraction with fallback strategies")
+    logging.debug("Correct answer: %s", correct_answer)
+
+    if correct_answer is None:
+        logging.warning("No 'correct_answer' provided, returning -1.0 for all completions")
+        return [-1.0] * len(completions)
+
+    rewards: list[float] = []
+
+    for i, raw_completion in enumerate(completions):
+        try:
+            completion = raw_completion.strip()
+            if not completion:
+                logging.debug(f"Completion {i} is empty")
+                rewards.append(-1.0)
+                continue
+
+            extracted_action: str | None = None
+
+            # Strategy 1: Try JSON parsing
+            try:
+                parsed = json.loads(completion)
+                if isinstance(parsed, dict):
+                    content = parsed.get("Content")
+                    if isinstance(content, dict):
+                        extracted_action = content.get("Action")
+                        if extracted_action:
+                            logging.debug(
+                                f"Completion {i}: Extracted action "
+                                f"via JSON: {extracted_action}"
+                            )
+            except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+                pass
+
+            # Strategy 2: Regex extraction (if JSON failed)
+            if extracted_action is None:
+                import re
+
+                # Pattern: "Action" (with optional quotes) followed by colon, then capture word
+                # Exclude structural chars: brackets, braces, commas, etc.
+                pattern = r'["\']?Action["\']?\s*:\s*["\']?([^,}\]\s"\']+)["\']?'
+                match = re.search(pattern, completion, re.IGNORECASE)
+                if match:
+                    extracted_action = match.group(1)
+                    logging.debug(
+                        f"Completion {i}: Extracted action via regex: {extracted_action}"
+                    )
+
+            # Strategy 3: Simple string search (if regex failed)
+            if extracted_action is None:
+                action_idx = completion.lower().find("action")
+                if action_idx != -1:
+                    after_action = completion[action_idx + 6 :].strip()  # Skip "Action"
+                    # Find the colon and extract next word
+                    colon_idx = after_action.find(":")
+                    if colon_idx != -1:
+                        after_colon = after_action[colon_idx + 1 :].strip()
+                        # Extract first word (sequence of non-space, non-structural characters)
+                        word = ""
+                        for char in after_colon:
+                            if char in (" ", "\t", "\n", "}", "]", ","):
+                                break
+                            if char not in ('\\"', "'"):
+                                word += char
+                        if word:
+                            extracted_action = word
+                            logging.debug(
+                                f"Completion {i}: Extracted action "
+                                f"via string search: {extracted_action}"
+                            )
+
+            # Evaluate extracted action
+            if extracted_action is None:
+                logging.debug(f"Completion {i}: Could not extract action with any strategy")
+                rewards.append(-1.0)
+            elif extracted_action == correct_answer:
+                logging.debug(f"Completion {i}: Extracted action matches correct answer")
+                rewards.append(1.0)
+            else:
+                logging.debug(
+                    f"Completion {i}: Extracted action '{extracted_action}' "
+                    f"does not match correct answer '{correct_answer}'"
+                )
+                rewards.append(0.0)
+
+        except Exception as e:
+            logging.error(f"Unexpected error in action extraction for completion {i}: {e}")
+            rewards.append(-1.0)
+
+    return rewards
+
+
+def reward_function_combined(
+    completions: list[str],
+    json_weight: float = 0.3,
+    action_weight: float = 0.7,
+    **kwargs: Any,
+) -> list[float]:
+    """Combined reward function using weighted scores
+    from JSON validation and action extraction.
+
+    Weights are normalized before combining.
+
+    Args:
+        completions (List[str]): List of model-generated completions
+        json_weight (float): Weight for JSON validation score (default: 0.3)
+        action_weight (float): Weight for action extraction score (default: 0.7)
+        **kwargs: Additional arguments passed to underlying functions
+
+    Returns:
+        List[float]: List of combined reward values
+    """
+    # Normalize weights
+    total_weight = json_weight + action_weight
+    json_weight = json_weight / total_weight
+    action_weight = action_weight / total_weight
+
+    json_rewards = reward_function_json_validation(completions, **kwargs)
+    action_rewards = reward_function_action_extraction(completions, **kwargs)
+
+    combined_rewards = [
+        json_weight * j + action_weight * a
+        for j, a in zip(json_rewards, action_rewards, strict=False)
+    ]
+
+    logging.debug(
+        f"Combined rewards (weights: JSON={json_weight:.2f}, "
+        f"Action={action_weight:.2f}): {combined_rewards}"
+    )
+
+    return combined_rewards
 
 
 def prepare_grpo_data(
@@ -347,11 +578,46 @@ def grpo_train(
     if not validate_grpo_config(cfg):
         raise ValueError("GRPO configuration validation failed")
 
+    # Select reward function based on configuration
+    if hasattr(cfg.grpo, "reward_function") and cfg.grpo.reward_function is not None:
+        reward_config = cfg.grpo.reward_function
+        reward_type = getattr(reward_config, "type", "combined")
+
+        if reward_type == "original":
+            reward_func = reward_function
+            logging.info("Using original reward function (strict JSON parsing)")
+        elif reward_type == "json_validation":
+            reward_func = reward_function_json_validation
+            logging.info("Using JSON validation reward function")
+        elif reward_type == "action_extraction":
+            reward_func = reward_function_action_extraction
+            logging.info("Using action extraction reward function with fallbacks")
+        elif reward_type == "combined":
+            json_weight = getattr(reward_config, "json_weight", 0.3)
+            action_weight = getattr(reward_config, "action_weight", 0.7)
+
+            def reward_func(completions: list[str], **kwargs: Any) -> list[float]:
+                return reward_function_combined(
+                    completions, json_weight=json_weight, action_weight=action_weight, **kwargs
+                )
+
+            logging.info(
+                f"Using combined reward function with weights: "
+                f"JSON={json_weight}, Action={action_weight}"
+            )
+        else:
+            logging.warning(
+                f"Unknown reward function type '{reward_type}', using default (combined)"
+            )
+            reward_func = reward_function_combined
+    else:
+        logging.info("No reward function config found, using default (combined)")
+
     # Test reward function with sample data
     sample_completions = [
-        '{\\"Content\\": {\\"Action\\": \\"Разговор\\"}}',  # Correct format
-        '{\\"Content\\": {\\"Action\\": \\"Игра\\"}}',  # Different action
-        '{\\"Invalid\\": \\"JSON\\"}',  # Wrong structure
+        '{"Content": {"Action": "Разговор"}}',  # Correct format
+        '{"Content": {"Action": "Игра"}}',  # Different action
+        '{"Invalid": "JSON"}',  # Wrong structure
         "Not JSON at all",  # Invalid JSON
         "",  # Empty completion
     ]

@@ -323,11 +323,197 @@ class TestGRPORewardFunction:
 
         results = debug_reward_function(completions, correct_answer)
 
-        assert results["total_completions"] == 3
-        assert results["positive_rewards"] == 1
-        assert results["zero_rewards"] == 1
-        assert results["negative_rewards"] == 1
-        assert results["average_reward"] == 0.0
+        # Check that all four reward functions are reported
+        assert "original" in results
+        assert "json_validation" in results
+        assert "action_extraction" in results
+        assert "combined" in results
+
+        # Check original function results (backward compatibility check)
+        assert results["original"]["total_completions"] == 3
+        assert results["original"]["positive_rewards"] == 1
+        assert results["original"]["zero_rewards"] == 1
+        assert results["original"]["negative_rewards"] == 1
+        assert abs(results["original"]["average_reward"] - 0.0) < 0.01
+
+
+class TestGRPORewardFunctionSeparated:
+    """Test separated reward functions for JSON validation and action extraction."""
+
+    def test_json_validation_valid_structure(self) -> None:
+        """Test JSON validation with correct structure."""
+        from training_model.grpo_train import reward_function_json_validation
+
+        completions = [
+            '{"Content": {"Action": "Разговор"}}',
+            '{"Content": {"Action": "Игра"}}',
+        ]
+
+        rewards = reward_function_json_validation(completions)
+
+        assert len(rewards) == 2
+        assert all(r == 1.0 for r in rewards)
+
+    def test_json_validation_invalid_structure(self) -> None:
+        """Test JSON validation with various invalid structures."""
+        from training_model.grpo_train import reward_function_json_validation
+
+        completions = [
+            "not json at all",
+            '{"Invalid": "structure"}',
+            '{"Content": "not a dict"}',
+            '{"Content": {}}',  # Missing Action
+            "",
+        ]
+
+        rewards = reward_function_json_validation(completions)
+
+        assert len(rewards) == 5
+        assert all(r == -1.0 for r in rewards)
+
+    def test_action_extraction_from_valid_json(self) -> None:
+        """Test action extraction from properly formatted JSON."""
+        from training_model.grpo_train import reward_function_action_extraction
+
+        completions = [
+            '{"Content": {"Action": "Разговор"}}',
+            '{"Content": {"Action": "Игра"}}',
+            '{"Content": {"Action": "Разговор"}}',
+        ]
+        correct_answer = "Разговор"
+
+        rewards = reward_function_action_extraction(completions, correct_answer=correct_answer)
+
+        assert len(rewards) == 3
+        assert rewards[0] == 1.0  # Correct match
+        assert rewards[1] == 0.0  # Wrong action
+        assert rewards[2] == 1.0  # Correct match
+
+    def test_action_extraction_from_malformed_json(self) -> None:
+        """Test action extraction with fallback strategies on malformed JSON."""
+        from training_model.grpo_train import reward_function_action_extraction
+
+        completions = [
+            'Action: "Разговор"',  # Simple format
+            "Content: {Action: Разговор}",  # Missing quotes
+            "Some text Action: Разговор more text",  # Surrounded by text
+            '{"Content": {"Action": "Игра"}}',  # Valid JSON but wrong action
+        ]
+        correct_answer = "Разговор"
+
+        rewards = reward_function_action_extraction(completions, correct_answer=correct_answer)
+
+        assert len(rewards) == 4
+        assert rewards[0] == 1.0  # Extracted via regex
+        assert rewards[1] == 1.0  # Extracted via regex
+        assert rewards[2] == 1.0  # Extracted via string search
+        assert rewards[3] == 0.0  # Valid but wrong action
+
+    def test_action_extraction_complete_failure(self) -> None:
+        """Test action extraction returns -1.0 when extraction completely fails."""
+        from training_model.grpo_train import reward_function_action_extraction
+
+        completions = [
+            "completely random text",
+            "",
+            "123456",
+        ]
+        correct_answer = "Разговор"
+
+        rewards = reward_function_action_extraction(completions, correct_answer=correct_answer)
+
+        assert len(rewards) == 3
+        assert all(r == -1.0 for r in rewards)
+
+    def test_combined_reward_function_weighting(self) -> None:
+        """Test combined reward function with proper weighting."""
+        from training_model.grpo_train import reward_function_combined
+
+        completions = [
+            '{"Content": {"Action": "Разговор"}}',  # Perfect: JSON=1, Action=1
+            'Action: "Разговор"',  # Correct action, malformed JSON: JSON=-1, Action=1
+            'Action: "Игра"',  # Wrong action, malformed JSON: JSON=-1, Action=0
+            "garbage",  # Both fail: JSON=-1, Action=-1
+        ]
+        correct_answer = "Разговор"
+
+        # Default weights: 0.3 JSON, 0.7 Action
+        rewards = reward_function_combined(completions, correct_answer=correct_answer)
+
+        assert len(rewards) == 4
+        # Perfect: 0.3*1 + 0.7*1 = 1.0
+        assert abs(rewards[0] - 1.0) < 0.01
+        # Correct action: 0.3*(-1) + 0.7*1 = 0.4
+        assert abs(rewards[1] - 0.4) < 0.01
+        # Wrong action: 0.3*(-1) + 0.7*0 = -0.3
+        assert abs(rewards[2] - (-0.3)) < 0.01
+        # Both fail: 0.3*(-1) + 0.7*(-1) = -1.0
+        assert abs(rewards[3] - (-1.0)) < 0.01
+
+    def test_combined_reward_function_custom_weights(self) -> None:
+        """Test combined reward function with custom weights."""
+        from training_model.grpo_train import reward_function_combined
+
+        completions = ['Action: "Разговор"']
+        correct_answer = "Разговор"
+
+        # Custom weights: 0.5 JSON, 0.5 Action
+        rewards = reward_function_combined(
+            completions,
+            json_weight=0.5,
+            action_weight=0.5,
+            correct_answer=correct_answer,
+        )
+
+        assert len(rewards) == 1
+        # 0.5*(-1) + 0.5*1 = 0.0
+        assert abs(rewards[0] - 0.0) < 0.01
+
+    def test_action_extraction_case_sensitivity(self) -> None:
+        """Test that action extraction is case-sensitive."""
+        from training_model.grpo_train import reward_function_action_extraction
+
+        completions = [
+            'Action: "Разговор"',
+            'Action: "разговор"',  # Lowercase - should not match
+        ]
+        correct_answer = "Разговор"
+
+        rewards = reward_function_action_extraction(completions, correct_answer=correct_answer)
+
+        assert len(rewards) == 2
+        assert rewards[0] == 1.0  # Exact match
+        assert rewards[1] == 0.0  # Case mismatch
+
+    def test_debug_reward_function_comprehensive(self) -> None:
+        """Test that debug function reports all four reward functions."""
+        from training_model.grpo_train import debug_reward_function
+
+        completions = [
+            '{"Content": {"Action": "Разговор"}}',
+            'Action: "Разговор"',
+            'Action: "Игра"',
+            "garbage",
+        ]
+        correct_answer = "Разговор"
+
+        results = debug_reward_function(completions, correct_answer)
+
+        # Should have all four functions
+        assert "original" in results
+        assert "json_validation" in results
+        assert "action_extraction" in results
+        assert "combined" in results
+
+        # Each should have stats
+        for func_name in ["original", "json_validation", "action_extraction", "combined"]:
+            assert "total_completions" in results[func_name]
+            assert "positive_rewards" in results[func_name]
+            assert "zero_rewards" in results[func_name]
+            assert "negative_rewards" in results[func_name]
+            assert "average_reward" in results[func_name]
+            assert "rewards" in results[func_name]
+            assert len(results[func_name]["rewards"]) == 4
 
 
 class TestGRPODataPreparation:
