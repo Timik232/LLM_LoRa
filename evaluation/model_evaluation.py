@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 import ollama
@@ -165,48 +167,32 @@ def call_llm(prompt: str, model: str, client: OpenAI) -> str:
     return response.choices[0].message.content
 
 
-def run_tests(
+def _execute_single_test(
+    test_case_index: int,
+    prompt: str,
+    correct_answer: str,
     cfg: DictConfig,
     client: OpenAI | ollama.Client,
-    test_dataset_path: str | Path = "data/test_ru.json",
-    test_file: str | Path = "test.json",
-    test_func: callable | None = None,
-    use_ollama: bool = False,
+    test_func: callable | None,
+    use_ollama: bool,
+    results_lock: Lock,
+    results: dict,
 ) -> None:
-    """
-    Runs tests by comparing the LLM responses with expected answers from a dataset.
+    """Execute a single test case and store results in a thread-safe manner.
 
     Args:
-        cfg (DictConfig): Configuration with model settings.
-        client (OpenAI | ollama.client): OpenAI or ollama client for LLM interaction.
-        test_dataset_path (str, optional): Path to the test dataset JSON file.
-            Defaults to "data/test_ru.json".
-        test_file (str, optional): Path to save the processed test file.
-            Defaults to "test.json".
-        test_func (callable, optional): Additional test function to execute on each result.
-            This function should accept the user prompt,
-            LLM's message text and the correct answer.
-        use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
-
-    Returns:
-        None
+        test_case_index: Index of the test case
+        prompt: The user prompt
+        correct_answer: Expected answer
+        cfg: Hydra configuration
+        client: OpenAI or Ollama client
+        test_func: Test function(s) to execute
+        use_ollama: Whether to use Ollama
+        results_lock: Thread lock for synchronizing result updates
+        results: Dictionary to store results
     """
-    with Path(test_dataset_path).open(encoding="utf-8") as file:
-        test_dataset = json.load(file)
-
-    dataset_to_json_for_test(test_dataset, test_file)
-
-    with Path(test_file).open(encoding="utf-8") as f:
-        prompts = json.load(f)
-
-    prompts_to_check = [prompt["user"] for prompt in prompts]
-    expected_answers = [answer["bot"] for answer in prompts]
-
-    passed_test = 0
-
-    for number in range(len(prompts_to_check)):
-        prompt = prompts_to_check[number]
-        correct_answer = expected_answers[number].strip()
+    logger = logging.getLogger(__name__)
+    try:
         if not use_ollama:
             model_answer = call_llm(
                 prompt,
@@ -223,24 +209,250 @@ def run_tests(
             )
 
         if test_func is not None:
-            try:
-                test_func(model_answer, correct_answer)
-                passed_test += 1
-            except AssertionError:
-                logger = logging.getLogger(__name__)
-                logger.exception(
-                    "Test failed for prompt: %s.\n Error: \n"
-                    "Model answer: %s\n"
-                    "Expected answer: %s\n",
+            if isinstance(test_func, list):
+                for func in test_func:
+                    try:
+                        func(model_answer, correct_answer, user_input=prompt)
+                    except AssertionError as e:
+                        logger.debug(
+                            f"Test {func.__name__} failed for case {test_case_index}: {e}"
+                        )
+                        with results_lock:
+                            results["failed_cases"].append(
+                                {
+                                    "index": test_case_index,
+                                    "test": func.__name__,
+                                    "error": str(e),
+                                }
+                            )
+                        return
+            else:
+                try:
+                    test_func(model_answer, correct_answer, user_input=prompt)
+                except AssertionError as e:
+                    logger.debug(f"Test failed for case {test_case_index}: {e}")
+                    with results_lock:
+                        results["failed_cases"].append(
+                            {
+                                "index": test_case_index,
+                                "test": test_func.__name__,
+                                "error": str(e),
+                            }
+                        )
+                    return
+
+            with results_lock:
+                results["passed_tests"] += 1
+    except Exception as e:
+        logger.debug(f"Error processing test case {test_case_index}: {e}")
+        with results_lock:
+            results["failed_cases"].append(
+                {"index": test_case_index, "test": "execution", "error": str(e)}
+            )
+
+
+def run_tests(
+    cfg: DictConfig,
+    client: OpenAI | ollama.Client,
+    test_dataset_path: str | Path = "data/test_ru.json",
+    test_file: str | Path = "test.json",
+    test_func: callable | None = None,
+    use_ollama: bool = False,
+) -> None:
+    """
+    Runs tests by comparing the LLM responses with expected answers from a dataset.
+
+    Supports both sequential and parallel execution based on configuration.
+
+    Args:
+        cfg (DictConfig): Configuration with model settings.
+        client (OpenAI | ollama.client): OpenAI or ollama client for LLM interaction.
+        test_dataset_path (str, optional): Path to the test dataset JSON file.
+            Defaults to "data/test_ru.json".
+        test_file (str, optional): Path to save the processed test file.
+            Defaults to "test.json".
+        test_func (callable, optional): Additional test function to execute on each result.
+            This function should accept the user prompt,
+            LLM's message text and the correct answer.
+        use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
+
+    Returns:
+        None
+    """
+    logger = logging.getLogger(__name__)
+
+    with Path(test_dataset_path).open(encoding="utf-8") as file:
+        test_dataset = json.load(file)
+
+    dataset_to_json_for_test(test_dataset, test_file)
+
+    with Path(test_file).open(encoding="utf-8") as f:
+        prompts = json.load(f)
+
+    prompts_to_check = [prompt["user"] for prompt in prompts]
+    expected_answers = [answer["bot"] for answer in prompts]
+
+    parallel_cfg = cfg.get("testing", {}).get("parallel_execution", {})
+    use_parallel = parallel_cfg.get("enabled", False)
+    num_workers = parallel_cfg.get("num_workers", 4)
+
+    # total_tests = len(prompts_to_check)
+
+    if not use_parallel or num_workers <= 1:
+        logger.info("Running tests sequentially")
+        _run_tests_sequential(
+            cfg, client, prompts_to_check, expected_answers, test_func, use_ollama, logger
+        )
+    else:
+        logger.info(f"Running tests in parallel with {num_workers} workers")
+        _run_tests_parallel(
+            cfg,
+            client,
+            prompts_to_check,
+            expected_answers,
+            test_func,
+            use_ollama,
+            num_workers,
+            logger,
+        )
+
+
+def _run_tests_sequential(
+    cfg: DictConfig,
+    client: OpenAI | ollama.Client,
+    prompts_to_check: list[str],
+    expected_answers: list[str],
+    test_func: callable | None,
+    use_ollama: bool,
+    logger: logging.Logger,
+) -> None:
+    """Execute tests sequentially."""
+    passed_test = 0
+    total_tests = len(prompts_to_check)
+
+    for number in range(total_tests):
+        prompt = prompts_to_check[number]
+        correct_answer = expected_answers[number].strip()
+
+        try:
+            if not use_ollama:
+                model_answer = call_llm(
                     prompt,
-                    model_answer,
-                    correct_answer,
+                    client=client,
+                    model=cfg.model.outfile,
+                ).strip()
+            else:
+                schema = MainModel.model_json_schema()
+                model_answer = ollama_generate(
+                    client=client,
+                    model_name=cfg.model.outfile.replace(".gguf", ""),
+                    prompt=prompt,
+                    schema=schema,
                 )
 
-    total_tests = len(prompts_to_check)
+            if test_func is not None:
+                if isinstance(test_func, list):
+                    all_passed = True
+                    for func in test_func:
+                        try:
+                            func(model_answer, correct_answer, user_input=prompt)
+                        except AssertionError:
+                            logger.exception(
+                                "Test %s failed for prompt: %s.\nModel answer: %s\n"
+                                "Expected answer: %s\n",
+                                func.__name__,
+                                prompt,
+                                model_answer,
+                                correct_answer,
+                            )
+                            all_passed = False
+                            break
+                    if all_passed:
+                        passed_test += 1
+                else:
+                    try:
+                        test_func(model_answer, correct_answer, user_input=prompt)
+                        passed_test += 1
+                    except AssertionError:
+                        logger.exception(
+                            "Test failed for prompt: %s.\nModel answer: %s\n"
+                            "Expected answer: %s\n",
+                            prompt,
+                            model_answer,
+                            correct_answer,
+                        )
+        except Exception as e:
+            logger.exception("Error processing test case %d: %s", number, e)
+
     final_metric = passed_test / total_tests if total_tests > 0 else 0
-    logger = logging.getLogger(__name__)
     logger.info("Metrics: %.2f (%s/%s tests passed)", final_metric, passed_test, total_tests)
+
+
+def _run_tests_parallel(
+    cfg: DictConfig,
+    client: OpenAI | ollama.Client,
+    prompts_to_check: list[str],
+    expected_answers: list[str],
+    test_func: callable | None,
+    use_ollama: bool,
+    num_workers: int,
+    logger: logging.Logger,
+) -> None:
+    """Execute tests in parallel using ThreadPoolExecutor."""
+    total_tests = len(prompts_to_check)
+    results_lock = Lock()
+    results = {
+        "passed_tests": 0,
+        "failed_cases": [],
+    }
+
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = []
+
+        for test_index in range(total_tests):
+            prompt = prompts_to_check[test_index]
+            correct_answer = expected_answers[test_index].strip()
+
+            future = executor.submit(
+                _execute_single_test,
+                test_index,
+                prompt,
+                correct_answer,
+                cfg,
+                client,
+                test_func,
+                use_ollama,
+                results_lock,
+                results,
+            )
+            futures.append(future)
+
+        completed = 0
+        for future in as_completed(futures):
+            completed += 1  # noqa: SIM113
+            if completed % 10 == 0 or completed == total_tests:
+                logger.info(f"Progress: {completed}/{total_tests} tests completed")
+            try:
+                future.result()
+            except Exception as e:
+                logger.exception(f"Unexpected error in parallel test execution: {e}")
+
+    passed_test = results["passed_tests"]
+    failed_count = len(results["failed_cases"])
+    final_metric = passed_test / total_tests if total_tests > 0 else 0
+
+    logger.info(
+        "Metrics: %.2f (%s/%s tests passed, %s failed)",
+        final_metric,
+        passed_test,
+        total_tests,
+        failed_count,
+    )
+
+    if results["failed_cases"] and logger.isEnabledFor(logging.DEBUG):
+        logger.debug("Failed test cases:")
+        for failed in results["failed_cases"][:10]:
+            logger.debug(f"  Case {failed['index']}: {failed['test']} - {failed['error']}")
 
 
 def test_llm(

@@ -58,7 +58,7 @@ def _create_deepeval_test_functions(cfg: DictConfig) -> list:
 
     def wrapper_unintended_answer_mention(
         model_answer: str, correct_answer: str, **kwargs: dict
-    ) -> None:
+    ) -> bool:
         """Wrapper for test_unintended_answer_mention to match test_actions signature."""
         logger = logging.getLogger(__name__)
         try:
@@ -67,6 +67,12 @@ def _create_deepeval_test_functions(cfg: DictConfig) -> list:
             logger.debug("Initializing evaluation model for unintended_answer_mention metric")
             _get_evaluation_model(cfg)
             user_input = kwargs.get("user_input", "")
+            if not user_input:
+                logger.warning(
+                    "WARNING: user_input is empty for unintended_answer_mention metric. "
+                    "DeepEval will not be able to evaluate if the "
+                    "model reveals answers to questions."
+                )
             return test_unintended_answer_mention(
                 cfg, user_input, model_answer, correct_answer
             )
@@ -112,6 +118,11 @@ def _create_deepeval_test_functions(cfg: DictConfig) -> list:
             _get_evaluation_model(cfg)
             available_actions = kwargs.get("available_actions", [])
             user_input = kwargs.get("user_input")
+            if not user_input:
+                logger.warning(
+                    "WARNING: user_input is empty for game_context_appropriateness metric. "
+                    "DeepEval will not have full context for evaluation."
+                )
             return test_game_context_appropriateness(
                 cfg, model_answer, available_actions, user_input
             )
@@ -184,6 +195,13 @@ def test_main(cfg: DictConfig) -> None:
                 f"Running {len(test_functions)} test "
                 f"functions (action validation + {len(deepeval_functions)} DeepEval metrics)"
             )
+
+        parallel_cfg = cfg.get("testing", {}).get("parallel_execution", {})
+        if parallel_cfg.get("enabled", False):
+            num_workers = parallel_cfg.get("num_workers", 4)
+            logger.info(f"Parallel execution enabled with {num_workers} workers")
+        else:
+            logger.info("Sequential test execution enabled")
 
         test_data_path = Path(cfg.paths.data_dir) / cfg.testing.test_dataset.split("/")[-1]
 

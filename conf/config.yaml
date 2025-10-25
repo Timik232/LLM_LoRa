@@ -46,7 +46,7 @@ training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 6
-  num_train_epochs: 2.15
+  num_train_epochs: 1.5
   eval_steps: 50
   logging_steps: 5
   warmup_steps: 5
@@ -60,7 +60,7 @@ training:
   gradient_checkpointing: true
   save_total_limit: 5
   load_best: false
-  use_grpo: false
+  use_grpo: true
   use_sft: true
   use_dpo: false
   seed: 42
@@ -190,6 +190,11 @@ testing:
   test_dataset: "${paths.data_dir}/test_ru_extended.json"
   output_test_file: "../test.json"
   prompt_for_deepeval: "test_prompt"
+
+  parallel_execution:
+    enabled: true              # Enable/disable parallel test execution
+    num_workers: 4             # Number of parallel workers (tasks/threads)
+    batch_size: 10             # Number of test cases per batch
 
   deepeval_testing:
     enabled: true  # Enable DeepEval metrics alongside action validation (default: false for backward compatibility)
