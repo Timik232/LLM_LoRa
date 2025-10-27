@@ -193,8 +193,7 @@ testing:
 
   parallel_execution:
     enabled: true              # Enable/disable parallel test execution
-    num_workers: 4             # Number of parallel workers (tasks/threads)
-    batch_size: 10             # Number of test cases per batch
+    max_concurrent_requests: 8  # Maximum concurrent API requests for async execution
 
   deepeval_testing:
     enabled: true  # Enable DeepEval metrics alongside action validation (default: false for backward compatibility)

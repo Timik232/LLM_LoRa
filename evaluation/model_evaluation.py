@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -403,7 +404,7 @@ def run_tests(
 
     parallel_cfg = cfg.get("testing", {}).get("parallel_execution", {})
     use_parallel = parallel_cfg.get("enabled", False)
-    num_workers = parallel_cfg.get("num_workers", 4)
+    max_concurrent = parallel_cfg.get("max_concurrent_requests", 20)
 
     if test_func is not None:
         if isinstance(test_func, list):
@@ -411,7 +412,14 @@ def run_tests(
         else:
             summary.test_functions = [test_func.__name__]
 
-    if not use_parallel or num_workers <= 1:
+    has_async_tests = False
+    if test_func is not None:
+        if isinstance(test_func, list):
+            has_async_tests = any(asyncio.iscoroutinefunction(f) for f in test_func)
+        else:
+            has_async_tests = asyncio.iscoroutinefunction(test_func)
+
+    if not use_parallel or max_concurrent <= 1:
         logger.info("Running tests sequentially")
         summary.execution_mode = "sequential"
         summary = _run_tests_sequential(
@@ -424,10 +432,29 @@ def run_tests(
             logger,
             summary,
         )
+    elif has_async_tests:
+        logger.info(
+            f"Running tests asynchronously with max {max_concurrent} concurrent requests"
+        )
+        summary.execution_mode = "async"
+        summary.num_workers = max_concurrent
+        summary = asyncio.run(
+            _run_tests_async(
+                cfg,
+                client,
+                prompts_to_check,
+                expected_answers,
+                test_func,
+                use_ollama,
+                max_concurrent,
+                logger,
+                summary,
+            )
+        )
     else:
-        logger.info(f"Running tests in parallel with {num_workers} workers")
+        logger.info(f"Running tests in parallel with {max_concurrent} workers")
         summary.execution_mode = "parallel"
-        summary.num_workers = num_workers
+        summary.num_workers = max_concurrent
         summary = _run_tests_parallel(
             cfg,
             client,
@@ -435,7 +462,7 @@ def run_tests(
             expected_answers,
             test_func,
             use_ollama,
-            num_workers,
+            max_concurrent,
             logger,
             summary,
         )
@@ -610,6 +637,213 @@ def _run_tests_parallel(
         logger.debug("Failed test cases:")
         for failed in results["failed_cases"][:10]:
             logger.debug(f"  Case {failed['index']}: {failed['test']} - {failed['error']}")
+
+    return summary
+
+
+async def _execute_single_test_async(
+    test_case_index: int,
+    prompt: str,
+    correct_answer: str,
+    cfg: DictConfig,
+    client: OpenAI | ollama.Client,
+    test_func: callable | list[callable] | None,
+    use_ollama: bool,
+    results_lock: asyncio.Lock,
+    results: dict,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    """Execute a single test case asynchronously with rate limiting.
+
+    Args:
+        test_case_index: Index of the test case
+        prompt: The user prompt
+        correct_answer: Expected answer
+        cfg: Hydra configuration
+        client: OpenAI or Ollama client
+        test_func: Test function(s) to execute (can be async)
+        use_ollama: Whether to use Ollama
+        results_lock: Async lock for synchronizing result updates
+        results: Dictionary to store results
+        semaphore: Semaphore for rate limiting
+    """
+    logger = logging.getLogger(__name__)
+
+    async with semaphore:
+        try:
+            if not use_ollama:
+                model_answer = call_llm(
+                    prompt,
+                    client=client,
+                    model=cfg.model.outfile,
+                ).strip()
+            else:
+                schema = MainModel.model_json_schema()
+                model_answer = ollama_generate(
+                    client=client,
+                    model_name=cfg.model.outfile.replace(".gguf", ""),
+                    prompt=prompt,
+                    schema=schema,
+                )
+
+            if test_func is not None:
+                if isinstance(test_func, list):
+                    for func in test_func:
+                        func_name = func.__name__
+                        try:
+                            if asyncio.iscoroutinefunction(func):
+                                success, score, reason = await func(
+                                    model_answer, correct_answer, user_input=prompt
+                                )
+                                if not success:
+                                    raise AssertionError(reason)
+                            else:
+                                func(model_answer, correct_answer, user_input=prompt)
+
+                            async with results_lock:
+                                if func_name not in results["function_metrics"]:
+                                    results["function_metrics"][func_name] = {
+                                        "passed": 0,
+                                        "total": 0,
+                                    }
+                                results["function_metrics"][func_name]["passed"] += 1
+                                results["function_metrics"][func_name]["total"] += 1
+                        except (AssertionError, Exception) as e:
+                            logger.debug(
+                                f"Test {func_name} failed for case {test_case_index}: {e}"
+                            )
+                            async with results_lock:
+                                if func_name not in results["function_metrics"]:
+                                    results["function_metrics"][func_name] = {
+                                        "passed": 0,
+                                        "total": 0,
+                                    }
+                                results["function_metrics"][func_name]["total"] += 1
+                                results["failed_cases"].append(
+                                    {
+                                        "index": test_case_index,
+                                        "test": func_name,
+                                        "error": str(e),
+                                    }
+                                )
+                            return
+                else:
+                    func_name = test_func.__name__
+                    try:
+                        if asyncio.iscoroutinefunction(test_func):
+                            success, score, reason = await test_func(
+                                model_answer, correct_answer, user_input=prompt
+                            )
+                            if not success:
+                                raise AssertionError(reason)
+                        else:
+                            test_func(model_answer, correct_answer, user_input=prompt)
+
+                        async with results_lock:
+                            if func_name not in results["function_metrics"]:
+                                results["function_metrics"][func_name] = {
+                                    "passed": 0,
+                                    "total": 0,
+                                }
+                            results["function_metrics"][func_name]["passed"] += 1
+                            results["function_metrics"][func_name]["total"] += 1
+                            results["passed_tests"] += 1
+                    except (AssertionError, Exception) as e:
+                        logger.debug(f"Test failed for case {test_case_index}: {e}")
+                        async with results_lock:
+                            if func_name not in results["function_metrics"]:
+                                results["function_metrics"][func_name] = {
+                                    "passed": 0,
+                                    "total": 0,
+                                }
+                            results["function_metrics"][func_name]["total"] += 1
+                            results["failed_cases"].append(
+                                {
+                                    "index": test_case_index,
+                                    "test": func_name,
+                                    "error": str(e),
+                                }
+                            )
+                        return
+
+                async with results_lock:
+                    results["passed_tests"] += 1
+
+        except Exception as e:
+            logger.exception(f"Unexpected error in test case {test_case_index}: {e}")
+            async with results_lock:
+                results["failed_cases"].append(
+                    {
+                        "index": test_case_index,
+                        "test": "execution_error",
+                        "error": str(e),
+                    }
+                )
+
+
+async def _run_tests_async(
+    cfg: DictConfig,
+    client: OpenAI | ollama.Client,
+    prompts_to_check: list[str],
+    expected_answers: list[str],
+    test_func: callable | list[callable] | None,
+    use_ollama: bool,
+    max_concurrent: int,
+    logger: logging.Logger,
+    summary: TestSummary,
+) -> TestSummary:
+    """Execute tests asynchronously with semaphore-based rate limiting."""
+    total_tests = len(prompts_to_check)
+    results_lock = asyncio.Lock()
+    results = {
+        "passed_tests": 0,
+        "failed_cases": [],
+        "function_metrics": {},
+    }
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    tasks = []
+    for test_index in range(total_tests):
+        prompt = prompts_to_check[test_index]
+        correct_answer = expected_answers[test_index].strip()
+
+        task = _execute_single_test_async(
+            test_index,
+            prompt,
+            correct_answer,
+            cfg,
+            client,
+            test_func,
+            use_ollama,
+            results_lock,
+            results,
+            semaphore,
+        )
+        tasks.append(task)
+
+    completed = 0
+    for coro in asyncio.as_completed(tasks):
+        await coro
+        completed += 1  # noqa: SIM113
+        if completed % 10 == 0 or completed == total_tests:
+            logger.info(f"Progress: {completed}/{total_tests} tests completed")
+
+    passed_test = results["passed_tests"]
+    failed_count = len(results["failed_cases"])
+    final_metric = passed_test / total_tests if total_tests > 0 else 0
+
+    summary.passed_tests = passed_test
+    summary.metrics_per_function = results["function_metrics"]
+    summary.failed_cases = results["failed_cases"]
+
+    logger.info(
+        "Metrics: %.2f (%s/%s tests passed, %s failed)",
+        final_metric,
+        passed_test,
+        total_tests,
+        failed_count,
+    )
 
     return summary
 

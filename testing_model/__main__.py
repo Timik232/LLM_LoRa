@@ -13,13 +13,19 @@ from training_model import configure_logging
 try:
     from evaluation.deepeval_integration import (
         test_game_context_appropriateness,
+        test_game_context_appropriateness_async,
         test_russian_language_quality,
+        test_russian_language_quality_async,
         test_unintended_answer_mention,
+        test_unintended_answer_mention_async,
     )
 except ImportError:
     test_game_context_appropriateness = None
     test_russian_language_quality = None
     test_unintended_answer_mention = None
+    test_game_context_appropriateness_async = None
+    test_russian_language_quality_async = None
+    test_unintended_answer_mention_async = None
 
 
 def _create_deepeval_test_functions(cfg: DictConfig) -> list:
@@ -56,10 +62,11 @@ def _create_deepeval_test_functions(cfg: DictConfig) -> list:
         f"Metrics: {requested_metrics}"
     )
 
-    def wrapper_unintended_answer_mention(
+    async def wrapper_unintended_answer_mention(
         model_answer: str, correct_answer: str, **kwargs: dict
-    ) -> bool:
-        """Wrapper for test_unintended_answer_mention to match test_actions signature."""
+    ) -> tuple[bool, float, str]:
+        """Async wrapper for test_unintended_answer_mention_async
+        to match test_actions signature."""
         logger = logging.getLogger(__name__)
         try:
             from evaluation.deepeval_integration import _get_evaluation_model
@@ -73,7 +80,7 @@ def _create_deepeval_test_functions(cfg: DictConfig) -> list:
                     "DeepEval will not be able to evaluate if the "
                     "model reveals answers to questions."
                 )
-            return test_unintended_answer_mention(
+            return await test_unintended_answer_mention_async(
                 cfg, user_input, model_answer, correct_answer
             )
         except Exception as e:
@@ -85,17 +92,18 @@ def _create_deepeval_test_functions(cfg: DictConfig) -> list:
             )
             raise
 
-    def wrapper_russian_language_quality(
+    async def wrapper_russian_language_quality(
         model_answer: str, correct_answer: str, **kwargs: dict
-    ) -> bool:
-        """Wrapper for test_russian_language_quality to match test_actions signature."""
+    ) -> tuple[bool, float, str]:
+        """Async wrapper for test_russian_language_quality_async
+        to match test_actions signature."""
         logger = logging.getLogger(__name__)
         try:
             from evaluation.deepeval_integration import _get_evaluation_model
 
             logger.debug("Initializing evaluation model for russian_language_quality metric")
             _get_evaluation_model(cfg)
-            return test_russian_language_quality(cfg, model_answer)
+            return await test_russian_language_quality_async(cfg, model_answer)
         except Exception as e:
             logger.error(
                 f"Failed to initialize evaluation model for russian_language_quality: {e}"
@@ -105,10 +113,11 @@ def _create_deepeval_test_functions(cfg: DictConfig) -> list:
             )
             raise
 
-    def wrapper_game_context_appropriateness(
+    async def wrapper_game_context_appropriateness(
         model_answer: str, correct_answer: str, **kwargs: dict
-    ) -> bool:
-        """Wrapper for test_game_context_appropriateness to match test_actions signature."""
+    ) -> tuple[bool, float, str]:
+        """Async wrapper for test_game_context_appropriateness_async
+        to match test_actions signature."""
         try:
             from evaluation.deepeval_integration import _get_evaluation_model
 
@@ -123,7 +132,7 @@ def _create_deepeval_test_functions(cfg: DictConfig) -> list:
                     "WARNING: user_input is empty for game_context_appropriateness metric. "
                     "DeepEval will not have full context for evaluation."
                 )
-            return test_game_context_appropriateness(
+            return await test_game_context_appropriateness_async(
                 cfg, model_answer, available_actions, user_input
             )
         except Exception as e:

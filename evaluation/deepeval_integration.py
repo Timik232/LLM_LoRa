@@ -355,6 +355,135 @@ def test_game_context_appropriateness(
     )
 
 
+async def test_unintended_answer_mention_async(
+    cfg: DictConfig, user_input: str, output: str, expected_answer: str
+) -> tuple[bool, float, str]:
+    """Async version: Detect when model mentions the correct answer when it shouldn't.
+
+    Args:
+        cfg (DictConfig): Hydra configuration
+        user_input (str): The original user input
+        output (str): The model's generated output
+        expected_answer (str): The expected correct answer
+
+    Returns:
+        tuple[bool, float, str]: (success, score, reason)
+    """
+    deepeval_cfg = cfg.get("deepeval", {})
+    threshold = deepeval_cfg.get("evaluation_model", {}).get("threshold", 0.7)
+    verbose = deepeval_cfg.get("evaluation_model", {}).get("verbose_mode", True)
+
+    metric = GEval(
+        name="Unintended Answer Mention Detection",
+        criteria="IF there is question in the prompt for the user, check that "
+        "the model doesn't by itself write answer to the question. "
+        "The model should not reveal the correct answer to the user, for example,"
+        "if there is question: 'Назовите количество ценностей в компании',"
+        "model should not write the answer to the question: 'вы неправильно сказали, "
+        "в компании 6 ценностей, а не 8'. This response will be error. In other case,"
+        "if there is not any question, model should pass this criteria.",
+        model=_get_evaluation_model(cfg),
+        verbose_mode=verbose,
+        threshold=threshold,
+        async_mode=True,
+        evaluation_params=[
+            LLMTestCaseParams.INPUT,
+            LLMTestCaseParams.ACTUAL_OUTPUT,
+        ],
+    )
+
+    test_case = LLMTestCase(input=user_input, actual_output=output)
+    await metric.a_measure(test_case)
+    return metric.success, metric.score, metric.reason or ""
+
+
+async def test_russian_language_quality_async(
+    cfg: DictConfig, output: str
+) -> tuple[bool, float, str]:
+    """Async version: Evaluate Russian language quality.
+
+    Args:
+        cfg (DictConfig): Hydra configuration
+        output (str): The model's generated output
+
+    Returns:
+        tuple[bool, float, str]: (success, score, reason)
+    """
+    deepeval_cfg = cfg.get("deepeval", {})
+    threshold = deepeval_cfg.get("evaluation_model", {}).get("threshold", 0.7)
+    verbose = deepeval_cfg.get("evaluation_model", {}).get("verbose_mode", True)
+
+    metric = GEval(
+        name="Russian Language Quality",
+        criteria="Evaluate the Russian language quality of the output. Check for: "
+        "1) Correct grammar and syntax, 2) Proper spelling, 3) Natural and fluent phrasing, "
+        "4) Appropriate word choice, 5) Correct punctuation. "
+        "The response should be grammatically correct and linguistically natural.",
+        model=_get_evaluation_model(cfg),
+        verbose_mode=verbose,
+        threshold=threshold,
+        async_mode=True,
+        evaluation_params=[
+            LLMTestCaseParams.ACTUAL_OUTPUT,
+        ],
+    )
+
+    test_case = LLMTestCase(input="", actual_output=output)
+    await metric.a_measure(test_case)
+    return metric.success, metric.score, metric.reason or ""
+
+
+async def test_game_context_appropriateness_async(
+    cfg: DictConfig,
+    output: str,
+    available_actions: list[str],
+    user_input: str | None = None,
+) -> tuple[bool, float, str]:
+    """Async version: Verify response is contextually appropriate for game usage.
+
+    Args:
+        cfg (DictConfig): Hydra configuration
+        output (str): The model's generated output
+        available_actions (list[str]): List of valid actions in the game
+        user_input (str, optional): The user input for context
+
+    Returns:
+        tuple[bool, float, str]: (success, score, reason)
+    """
+    deepeval_cfg = cfg.get("deepeval", {})
+    threshold = deepeval_cfg.get("evaluation_model", {}).get("threshold", 0.7)
+    verbose = deepeval_cfg.get("evaluation_model", {}).get("verbose_mode", True)
+
+    actions_str = ", ".join(f"'{action}'" for action in available_actions)
+    criteria = (
+        f"Evaluate if the response is contextually appropriate for game usage. Check: "
+        f"1) The chosen action is valid and from available actions: {actions_str}, "
+        f"2) The response maintains narrative flow and game immersion, "
+        f"3) No meta-commentary or breaking of game context, "
+        f"4) Response follows expected JSON format with Content.Action structure. "
+        f"The response should be appropriate for a game context. If answer is neutral"
+        f"and can be appropriate both for the game usage and for classic dialog,"
+        f"it is still good."
+    )
+
+    metric = GEval(
+        name="Game Context Appropriateness",
+        criteria=criteria,
+        model=_get_evaluation_model(cfg),
+        verbose_mode=verbose,
+        threshold=threshold,
+        async_mode=True,
+        evaluation_params=[
+            LLMTestCaseParams.ACTUAL_OUTPUT,
+        ]
+        + ([LLMTestCaseParams.INPUT] if user_input else []),
+    )
+
+    test_case = LLMTestCase(input=user_input or "", actual_output=output)
+    await metric.a_measure(test_case)
+    return metric.success, metric.score, metric.reason or ""
+
+
 def run_all_deepeval_metrics(
     cfg: DictConfig,
     user_input: str,
