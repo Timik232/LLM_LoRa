@@ -162,6 +162,7 @@ def test_main(cfg: DictConfig) -> None:
     2. Set up data directory path
     3. Build list of test functions (action validation + optional DeepEval metrics)
     4. Run model testing via Ollama
+    5. Display final test summary
 
     Args:
         cfg (DictConfig): Configuration dictionary from Hydra containing
@@ -174,6 +175,7 @@ def test_main(cfg: DictConfig) -> None:
     - Configures logging based on config log_level setting
     - Loads DeepEval metrics if enabled in config
     - Runs testing process with configured test functions
+    - Displays comprehensive test execution summary
     """
     configure_logging(cfg.logging.log_level)
     logger = logging.getLogger(__name__)
@@ -205,7 +207,7 @@ def test_main(cfg: DictConfig) -> None:
 
         test_data_path = Path(cfg.paths.data_dir) / cfg.testing.test_dataset.split("/")[-1]
 
-        test_llm(
+        summaries = test_llm(
             cfg,
             path_test_dataset=str(test_data_path),
             test_file=cfg.testing.output_test_file,
@@ -213,6 +215,34 @@ def test_main(cfg: DictConfig) -> None:
             use_ollama=True,
             ollama_client=client,
         )
+
+        if summaries:
+            logger.info("\n" + "=" * 60)
+            logger.info("FINAL TEST EXECUTION SUMMARY")
+            logger.info("=" * 60)
+            for i, summary in enumerate(summaries):
+                logger.info(
+                    f"\nTest Function {i + 1}:"
+                    f" {summary.test_functions[0] if summary.test_functions else 'Unknown'}"
+                )
+                logger.info(f"  Total Tests: {summary.total_tests}")
+                logger.info(
+                    f"  Passed: {summary.passed_tests} ({summary.success_rate * 100:.1f}%)"
+                )
+                logger.info(
+                    f"  Failed: {summary.failed_tests} "
+                    f"({(1 - summary.success_rate) * 100:.1f}%)"
+                )
+                if summary.metrics_per_function:
+                    logger.info("  Detailed Metrics:")
+                    for func_name, metrics in summary.metrics_per_function.items():
+                        passed = metrics.get("passed", 0)
+                        total = metrics.get("total", 0)
+                        success_pct = (passed / total * 100) if total > 0 else 0
+                        logger.info(
+                            f"    - {func_name}: {passed}/{total} ({success_pct:.1f}%)"
+                        )
+            logger.info("=" * 60 + "\n")
 
 
 if __name__ == "__main__":

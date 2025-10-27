@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
 from typing import TYPE_CHECKING, Any
@@ -211,44 +213,144 @@ def _execute_single_test(
         if test_func is not None:
             if isinstance(test_func, list):
                 for func in test_func:
+                    func_name = func.__name__
                     try:
                         func(model_answer, correct_answer, user_input=prompt)
+                        with results_lock:
+                            if func_name not in results["function_metrics"]:
+                                results["function_metrics"][func_name] = {
+                                    "passed": 0,
+                                    "total": 0,
+                                }
+                            results["function_metrics"][func_name]["passed"] += 1
+                            results["function_metrics"][func_name]["total"] += 1
                     except AssertionError as e:
                         logger.debug(
-                            f"Test {func.__name__} failed for case {test_case_index}: {e}"
+                            f"Test {func_name} failed for case {test_case_index}: {e}"
                         )
                         with results_lock:
+                            if func_name not in results["function_metrics"]:
+                                results["function_metrics"][func_name] = {
+                                    "passed": 0,
+                                    "total": 0,
+                                }
+                            results["function_metrics"][func_name]["total"] += 1
                             results["failed_cases"].append(
                                 {
                                     "index": test_case_index,
-                                    "test": func.__name__,
+                                    "test": func_name,
                                     "error": str(e),
                                 }
                             )
                         return
             else:
+                func_name = test_func.__name__
                 try:
                     test_func(model_answer, correct_answer, user_input=prompt)
+                    with results_lock:
+                        if func_name not in results["function_metrics"]:
+                            results["function_metrics"][func_name] = {"passed": 0, "total": 0}
+                        results["function_metrics"][func_name]["passed"] += 1
+                        results["function_metrics"][func_name]["total"] += 1
+                        results["passed_tests"] += 1
                 except AssertionError as e:
                     logger.debug(f"Test failed for case {test_case_index}: {e}")
                     with results_lock:
+                        if func_name not in results["function_metrics"]:
+                            results["function_metrics"][func_name] = {"passed": 0, "total": 0}
+                        results["function_metrics"][func_name]["total"] += 1
                         results["failed_cases"].append(
                             {
                                 "index": test_case_index,
-                                "test": test_func.__name__,
+                                "test": func_name,
                                 "error": str(e),
                             }
                         )
                     return
 
             with results_lock:
-                results["passed_tests"] += 1
+                if isinstance(test_func, list):
+                    results["passed_tests"] += 1
     except Exception as e:
         logger.debug(f"Error processing test case {test_case_index}: {e}")
         with results_lock:
             results["failed_cases"].append(
                 {"index": test_case_index, "test": "execution", "error": str(e)}
             )
+
+
+@dataclass
+class TestSummary:
+    total_tests: int = 0
+    passed_tests: int = 0
+    failed_tests: int = 0
+    execution_mode: str = "sequential"
+    num_workers: int = 1
+    test_functions: list[str] = field(default_factory=list)
+    metrics_per_function: dict[str, dict] = field(default_factory=dict)
+    failed_cases: list[dict] = field(default_factory=list)
+    start_time: float = 0.0
+    end_time: float = 0.0
+
+    @property
+    def success_rate(self) -> float:
+        return self.passed_tests / self.total_tests if self.total_tests > 0 else 0.0
+
+    @property
+    def duration(self) -> float:
+        return self.end_time - self.start_time
+
+    def duration_str(self) -> str:
+        duration = self.duration
+        minutes = int(duration // 60)
+        seconds = int(duration % 60)
+        if minutes > 0:
+            return f"{minutes}m {seconds}s"
+        return f"{seconds}s"
+
+    def to_dict(self) -> dict:
+        return {
+            "total_tests": self.total_tests,
+            "passed_tests": self.passed_tests,
+            "failed_tests": self.failed_tests,
+            "success_rate": f"{self.success_rate * 100:.1f}%",
+            "execution_mode": self.execution_mode,
+            "num_workers": self.num_workers,
+            "test_functions": self.test_functions,
+            "metrics_per_function": self.metrics_per_function,
+            "duration_seconds": round(self.duration, 2),
+            "duration_str": self.duration_str(),
+        }
+
+
+def _log_test_summary(summary: TestSummary, logger: logging.Logger) -> None:
+    success_rate_pct = summary.success_rate * 100
+    separator = "=" * 60
+    logger.info(separator)
+    logger.info("TEST EXECUTION SUMMARY")
+    logger.info(separator)
+    logger.info(f"Execution Mode: {summary.execution_mode}")
+    if summary.execution_mode == "parallel":
+        logger.info(f"Number of Workers: {summary.num_workers}")
+    logger.info(f"Total Tests: {summary.total_tests}")
+    logger.info(f"  ✓ Passed: {summary.passed_tests} ({success_rate_pct:.1f}%)")
+    logger.info(f"  ✗ Failed: {summary.failed_tests} ({100 - success_rate_pct:.1f}%)")
+
+    if summary.test_functions:
+        logger.info("\nTest Functions:")
+        for func_name in summary.test_functions:
+            logger.info(f"  - {func_name}")
+
+    if summary.metrics_per_function:
+        logger.info("\nDetailed Metrics by Function:")
+        for func_name, metrics in summary.metrics_per_function.items():
+            passed = metrics.get("passed", 0)
+            total = metrics.get("total", 0)
+            success_pct = (passed / total * 100) if total > 0 else 0
+            logger.info(f"  {func_name}: {passed}/{total} passed ({success_pct:.1f}%)")
+
+    logger.info(f"\nExecution Time: {summary.duration_str()}")
+    logger.info(separator)
 
 
 def run_tests(
@@ -258,7 +360,8 @@ def run_tests(
     test_file: str | Path = "test.json",
     test_func: callable | None = None,
     use_ollama: bool = False,
-) -> None:
+    suppress_log: bool = False,
+) -> TestSummary:
     """
     Runs tests by comparing the LLM responses with expected answers from a dataset.
 
@@ -275,11 +378,15 @@ def run_tests(
             This function should accept the user prompt,
             LLM's message text and the correct answer.
         use_ollama (bool) : Flag to indicate if Ollama should be used for testing.
+        suppress_log (bool): If True, suppress logging of test summary. Used when running
+            multiple test functions to avoid duplicate summary logs.
 
     Returns:
-        None
+        TestSummary: Summary object containing test execution details and metrics.
     """
     logger = logging.getLogger(__name__)
+    summary = TestSummary()
+    summary.start_time = time.time()
 
     with Path(test_dataset_path).open(encoding="utf-8") as file:
         test_dataset = json.load(file)
@@ -292,20 +399,36 @@ def run_tests(
     prompts_to_check = [prompt["user"] for prompt in prompts]
     expected_answers = [answer["bot"] for answer in prompts]
 
+    summary.total_tests = len(prompts_to_check)
+
     parallel_cfg = cfg.get("testing", {}).get("parallel_execution", {})
     use_parallel = parallel_cfg.get("enabled", False)
     num_workers = parallel_cfg.get("num_workers", 4)
 
-    # total_tests = len(prompts_to_check)
+    if test_func is not None:
+        if isinstance(test_func, list):
+            summary.test_functions = [f.__name__ for f in test_func]
+        else:
+            summary.test_functions = [test_func.__name__]
 
     if not use_parallel or num_workers <= 1:
         logger.info("Running tests sequentially")
-        _run_tests_sequential(
-            cfg, client, prompts_to_check, expected_answers, test_func, use_ollama, logger
+        summary.execution_mode = "sequential"
+        summary = _run_tests_sequential(
+            cfg,
+            client,
+            prompts_to_check,
+            expected_answers,
+            test_func,
+            use_ollama,
+            logger,
+            summary,
         )
     else:
         logger.info(f"Running tests in parallel with {num_workers} workers")
-        _run_tests_parallel(
+        summary.execution_mode = "parallel"
+        summary.num_workers = num_workers
+        summary = _run_tests_parallel(
             cfg,
             client,
             prompts_to_check,
@@ -314,7 +437,16 @@ def run_tests(
             use_ollama,
             num_workers,
             logger,
+            summary,
         )
+
+    summary.end_time = time.time()
+    summary.failed_tests = summary.total_tests - summary.passed_tests
+
+    if not suppress_log:
+        _log_test_summary(summary, logger)
+
+    return summary
 
 
 def _run_tests_sequential(
@@ -325,10 +457,12 @@ def _run_tests_sequential(
     test_func: callable | None,
     use_ollama: bool,
     logger: logging.Logger,
-) -> None:
-    """Execute tests sequentially."""
+    summary: TestSummary,
+) -> TestSummary:
+    """Execute tests sequentially and update summary."""
     passed_test = 0
     total_tests = len(prompts_to_check)
+    function_metrics = {}
 
     for number in range(total_tests):
         prompt = prompts_to_check[number]
@@ -354,8 +488,14 @@ def _run_tests_sequential(
                 if isinstance(test_func, list):
                     all_passed = True
                     for func in test_func:
+                        func_name = func.__name__
+                        if func_name not in function_metrics:
+                            function_metrics[func_name] = {"passed": 0, "total": 0}
+                        function_metrics[func_name]["total"] += 1
+
                         try:
                             func(model_answer, correct_answer, user_input=prompt)
+                            function_metrics[func_name]["passed"] += 1
                         except AssertionError:
                             logger.exception(
                                 "Test %s failed for prompt: %s.\nModel answer: %s\n"
@@ -370,8 +510,14 @@ def _run_tests_sequential(
                     if all_passed:
                         passed_test += 1
                 else:
+                    func_name = test_func.__name__
+                    if func_name not in function_metrics:
+                        function_metrics[func_name] = {"passed": 0, "total": 0}
+                    function_metrics[func_name]["total"] += 1
+
                     try:
                         test_func(model_answer, correct_answer, user_input=prompt)
+                        function_metrics[func_name]["passed"] += 1
                         passed_test += 1
                     except AssertionError:
                         logger.exception(
@@ -384,8 +530,13 @@ def _run_tests_sequential(
         except Exception as e:
             logger.exception("Error processing test case %d: %s", number, e)
 
+    summary.passed_tests = passed_test
+    summary.metrics_per_function = function_metrics
+
     final_metric = passed_test / total_tests if total_tests > 0 else 0
     logger.info("Metrics: %.2f (%s/%s tests passed)", final_metric, passed_test, total_tests)
+
+    return summary
 
 
 def _run_tests_parallel(
@@ -397,13 +548,15 @@ def _run_tests_parallel(
     use_ollama: bool,
     num_workers: int,
     logger: logging.Logger,
-) -> None:
+    summary: TestSummary,
+) -> TestSummary:
     """Execute tests in parallel using ThreadPoolExecutor."""
     total_tests = len(prompts_to_check)
     results_lock = Lock()
     results = {
         "passed_tests": 0,
         "failed_cases": [],
+        "function_metrics": {},
     }
 
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -441,6 +594,10 @@ def _run_tests_parallel(
     failed_count = len(results["failed_cases"])
     final_metric = passed_test / total_tests if total_tests > 0 else 0
 
+    summary.passed_tests = passed_test
+    summary.metrics_per_function = results["function_metrics"]
+    summary.failed_cases = results["failed_cases"]
+
     logger.info(
         "Metrics: %.2f (%s/%s tests passed, %s failed)",
         final_metric,
@@ -454,6 +611,61 @@ def _run_tests_parallel(
         for failed in results["failed_cases"][:10]:
             logger.debug(f"  Case {failed['index']}: {failed['test']} - {failed['error']}")
 
+    return summary
+
+
+def _log_test_llm_summary(summaries: list[TestSummary], logger: logging.Logger) -> None:
+    """Log comprehensive summary for multiple test functions.
+
+    Args:
+        summaries: List of TestSummary objects from each test function
+        logger: Logger instance for output
+    """
+    separator = "=" * 70
+    logger.info(separator)
+    logger.info("COMPREHENSIVE TEST EXECUTION SUMMARY (All Test Functions)")
+    logger.info(separator)
+
+    total_tests_all = summaries[0].total_tests if summaries else 0
+    total_passed_all = sum(s.passed_tests for s in summaries)
+    total_failed_all = sum(s.failed_tests for s in summaries)
+
+    logger.info(f"\nTotal Test Cases: {total_tests_all}")
+    logger.info(f"Number of Test Functions: {len(summaries)}\n")
+
+    logger.info("Results by Test Function:")
+    logger.info("-" * 70)
+
+    for idx, summary in enumerate(summaries):
+        func_name = summary.test_functions[0] if summary.test_functions else f"Test {idx + 1}"
+        success_pct = summary.success_rate * 100
+        logger.info(f"\n[{idx + 1}] {func_name}")
+        logger.info(
+            f"    ✓ Passed: {summary.passed_tests}/{summary.total_tests} ({success_pct:.1f}%)"
+        )
+        logger.info(
+            f"    ✗ Failed: {summary.failed_tests}/{summary.total_tests} "
+            f"({100 - success_pct:.1f}%)"
+        )
+        logger.info(f"    ⏱ Time: {summary.duration_str()}")
+
+        if summary.metrics_per_function:
+            for func_name_detail, metrics in summary.metrics_per_function.items():
+                passed = metrics.get("passed", 0)
+                total = metrics.get("total", 0)
+                success_pct_detail = (passed / total * 100) if total > 0 else 0
+                logger.info(
+                    f"      └─ {func_name_detail}: {passed}/{total} "
+                    f"({success_pct_detail:.1f}%)"
+                )
+
+    logger.info("\n" + "-" * 70)
+    logger.info("Overall Statistics:")
+    logger.info(f"  • Total Passed Across All Functions: {total_passed_all}")
+    logger.info(f"  • Total Failed Across All Functions: {total_failed_all}")
+    logger.info(f"  • Total Execution Time: {sum(s.duration for s in summaries):.1f}s")
+    logger.info(separator + "\n")
+
 
 def test_llm(
     cfg: DictConfig,
@@ -463,7 +675,7 @@ def test_llm(
     llm_url: str | None = "http://localhost:1234/v1/",
     use_ollama: bool = False,
     ollama_client: ollama.Client | None = None,
-) -> None:
+) -> list[TestSummary]:
     """
     Test the LLM via LM Studio by comparing model responses with expected answers.
 
@@ -480,7 +692,7 @@ def test_llm(
         ollama_client (Optional[ollama.Client]): Ollama client for connection
 
     Returns:
-        None
+        list[TestSummary]: List of summary objects for each test function executed.
 
     Raises:
         Logs errors for failed tests and prints accuracy metrics.
@@ -491,23 +703,36 @@ def test_llm(
         client = OpenAI(api_key="dummy", base_url=llm_url)
     else:
         client = ollama_client
-    for test in test_func:
+
+    logger = logging.getLogger(__name__)
+    summaries = []
+    has_multiple_tests = len(test_func) > 1
+    suppress_intermediate_logs = has_multiple_tests
+
+    for test_idx, test in enumerate(test_func):
         try:
-            logger = logging.getLogger(__name__)
-            logger.info(f"Running test function: {test.__name__}")
-            run_tests(
+            logger.info(
+                f"Running test function {test_idx + 1}/{len(test_func)}: {test.__name__}"
+            )
+            summary = run_tests(
                 cfg=cfg,
                 client=client,
                 test_dataset_path=path_test_dataset,
                 test_file=test_file,
                 test_func=test,
                 use_ollama=use_ollama,
+                suppress_log=suppress_intermediate_logs,
             )
+            summaries.append(summary)
             logger.info(f"✓ Test function {test.__name__} completed successfully")
         except Exception as e:
-            logger = logging.getLogger(__name__)
             logger.error(f"✗ Test function {test.__name__} failed with error:")
             logger.exception(e)
+
+    if has_multiple_tests and summaries:
+        _log_test_llm_summary(summaries, logger)
+
+    return summaries
 
 
 def llamacpp_execute_test(
