@@ -41,4 +41,4 @@ def test_actions(model_answer: str, correct_answer: str, **kwargs: object) -> No
 
 def _raise_action_mismatch() -> None:
     """Helper to raise a standardized AssertionError for action mismatch."""
-    raise AssertionError()
+    raise AssertionError("Action doesn't match")
