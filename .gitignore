@@ -182,6 +182,12 @@ yandex8b-chat-vika
 vikhr8b-chat-vika
 judge-model
 models/
+qwen3.5-2b-chinese-style/
+merged_model_fp16/
+Llama-finetuned/
+custom-model/
+*.gguf
+*.safetensors
 data/
 
 flash-attention

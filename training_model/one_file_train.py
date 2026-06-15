@@ -682,7 +682,6 @@ def setup_model_and_tokenizer(cfg: DictConfig) -> tuple[ModelType, AutoTokenizer
                 quantization_config=bnb_config,
                 device_map="auto",
                 attn_implementation=cfg.model.attn_implementation,
-                use_cache=False,
             )
         elif cfg.model.model_type == "gemma3n":
             # TODO: Implement Gemma3n support when available
@@ -693,7 +692,6 @@ def setup_model_and_tokenizer(cfg: DictConfig) -> tuple[ModelType, AutoTokenizer
                 quantization_config=bnb_config,
                 device_map="auto",
                 attn_implementation=cfg.model.attn_implementation,
-                use_cache=False,
             )
     except Exception as e:
         raise ModelLoadingError(f"Failed to load model {cfg.model.model_name}: {e}") from e
@@ -855,7 +853,6 @@ def run_sft_training(
             weight_decay=cfg.training.weight_decay,
             neftune_noise_alpha=cfg.training.neftune_noise_alpha,
             gradient_checkpointing_kwargs={"use_reentrant": False},
-            group_by_length=True,
             report_to=report_to_backend,  # Use dynamic backend selection
             save_total_limit=cfg.training.save_total_limit,
             load_best_model_at_end=cfg.training.load_best,
@@ -1940,7 +1937,7 @@ def main_train(data_dir: str, cfg: DictConfig) -> dict[str, Any]:
         log_memory_usage("Final script cleanup: ", cfg=cfg)
 
         try:
-            test_file_path = Path(data_dir) / "test_ru.json"
+            test_file_path = Path(data_dir) / cfg.paths.test_data
             if not test_file_path.exists():
                 raise DataProcessingError(f"Test dataset file not found: {test_file_path}")
 

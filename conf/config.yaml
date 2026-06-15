@@ -85,9 +85,10 @@ memory_management:
   log_memory_usage: true           # Log memory usage at key points in training
 
 data_preparation:
-  method: "game" # Options: "classic" | "game"
+  method: "style_transfer" # Options: "classic" | "game" | "style_transfer"
   # classic: Simple instruction/output format with basic prompting
   # game: Complex game format with history, actions, and system messages
+  # style_transfer: Direct user/bot mapping for style transfer tasks
 
 grpo:
   val_data: "test_ru_extended.json"
@@ -182,8 +183,8 @@ environment:
   use_dotenv: true  # Set to true for local development, false for Docker/production
 
 testing:
-  data_source_mode: "separate_validation"  # Options: "auto_split", "separate_validation", "separate_files"
-  test_split_ratio: 0.05  # Used for auto_split mode
+  data_source_mode: "auto_split"  # Options: "auto_split", "separate_validation", "separate_files"
+  test_split_ratio: 0.1  # Used for auto_split mode
   val_data_file: "test_ru.json"  # Validation file used for separate_validation mode
   manual_lmstudio_test: false # use only for local run
   test: true
@@ -237,7 +238,7 @@ logging:
     anonymous: "allow"
 
   mlflow:
-    experiment_name: "vika-experiment"
+    experiment_name: "qwen3.5-2b-chinese-style"
     tracking_uri: "https://mlflow.komolov.synology.me"
     log_artifacts: false
 

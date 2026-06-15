@@ -55,7 +55,15 @@ def dataset_to_json(
     output_path = Path(filename)
     output_path.write_text("", encoding="utf-8")
 
-    for example in examples.values():
+    # Handle both dict and list formats for examples
+    if isinstance(examples, dict):
+        examples_iter = examples.values()
+    elif isinstance(examples, list):
+        examples_iter = examples
+    else:
+        examples_iter = []
+
+    for example in examples_iter:
         system_message = system_template
         logging.debug(example)
 
@@ -64,6 +72,10 @@ def dataset_to_json(
             # Game method: expects "prompt" field with complex structure
             user_message = game_get_user_prompt(example.get("prompt", {}))
             bot_message = str(example.get("answer", ""))
+        elif method == "style_transfer":
+            # Style transfer: direct user/bot mapping without prompt wrapping
+            user_message = str(example.get("user", example.get("instruction", "")))
+            bot_message = str(example.get("bot", example.get("output", "")))
         else:
             # Classic method: simple instruction/output format
             instruction = str(example.get("instruction", ""))

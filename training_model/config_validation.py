@@ -205,6 +205,11 @@ def validate_dpo_config(cfg: DictConfig) -> bool:
         logger.info("DPO configuration not found - skipping DPO validation")
         return True
 
+    # Skip DPO file validation if DPO training is disabled
+    if not getattr(cfg.training, "use_dpo", False):
+        logger.info("DPO training disabled (use_dpo=false) - skipping DPO file validation")
+        return True
+
     required_dpo_params = ["val_data", "train_data"]
 
     missing_params = [p for p in required_dpo_params if not hasattr(cfg.dpo, p)]
@@ -252,6 +257,11 @@ def validate_grpo_config(cfg: DictConfig) -> bool:
 
     if not hasattr(cfg, "grpo"):
         logger.info("GRPO configuration not found - skipping GRPO validation")
+        return True
+
+    # Skip GRPO file validation if GRPO training is disabled
+    if not getattr(cfg.training, "use_grpo", False):
+        logger.info("GRPO training disabled (use_grpo=false) - skipping GRPO file validation")
         return True
 
     if not hasattr(cfg, "paths") or cfg.paths is None:
