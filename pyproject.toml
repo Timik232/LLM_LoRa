@@ -95,6 +95,9 @@ ignore = ["E203", "W605", "PLR0913", "PLR0915", "PLR2004", "COM812",
 "training_model/types.py" = ["UP007", "PYI036"]
 "tests/*" = ["ANN001"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["training_model"]
+
 [tool.black]
 line-length = 95
 target-version = ["py311", "py312", "py313"]
