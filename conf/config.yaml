@@ -6,31 +6,54 @@ defaults:
 
 model:
   model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
-  dataset_name: "data/dataset_ru.json"
-  new_model: "vikhr8b-chat-vika"
-  torch_dtype: "float16"
-  attn_implementation: "eager"
+  new_model: "4b-chat-vika"
+  torch_dtype: "bfloat16"
+  attn_implementation: "flash_attention_2"
   train_steps: 60
   outfile: "custom-model.gguf" # if you change this, change the model in run_pipeline
-  qtype: "q4_1"
-  gguf_directory: "custom-model" # if you change this, change in run_pipeline
-  lora_r: 16
-  lora_alpha: 32
-  lora_dropout: 0.1
-  use_8bit: false
+  quant:
+    enabled: true
+    convert_to_gguf: true # Enable GGUF conversion in training pipeline
+    qtype: "q4_k_m"
+    gguf_dir: "${paths.gguf_directory}" # if you change this, change in run_pipeline
+    use_8bit: false
+  rkllm:
+    enabled: false # Enable RKLLM conversion
+    target_platform: "rk3588" # Target Rockchip platform: rk3588, rk3576, etc.
+    quantization: "w8a8" # RKLLM quantization: w8a8, w4a16, w4a16_g128
+    output_dir: "rkllm_models" # Output directory for RKLLM models
+    do_parallelize: false # Enable model parallelization for larger models
+    hybrid_quantization: false # Enable hybrid quantization
+    num_npu_core: 1 # Number of NPU cores to use (1-3)
+  lora:
+    r: 16
+    alpha: 64
+    dropout: 0.1
+  model_type: "auto" # gemma or gemma3n or auto
+
+# Global generation configuration - shared across all training methods
+generation:
+  temperature: 0.7              # Sampling temperature (0.0 = deterministic, higher = more random)
+  top_k: 50                     # Top-k sampling (0 = disabled)
+  top_p: 0.95                   # Nucleus/top-p sampling (1.0 = disabled)
+  do_sample: true               # Enable sampling (vs greedy/beam search)
+  max_new_tokens: 256           # Maximum tokens to generate
+  repetition_penalty: 1.1       # Penalize repetition (1.0 = no penalty)
+  length_penalty: 1.0           # Length penalty for generation (1.0 = no penalty)
+  pad_token_id: null            # Will be set automatically from tokenizer
 
 training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
-  gradient_accumulation_steps: 4
-  num_train_epochs: 1
-  eval_steps: 20
+  gradient_accumulation_steps: 6
+  num_train_epochs: 1.5
+  eval_steps: 50
   logging_steps: 5
-  warmup_steps: 10
-  learning_rate: 2e-5
+  warmup_steps: 5
+  learning_rate: 3.26e-05
   fp16: false
-  bf16: false
-  weight_decay: 0.05
+  bf16: true
+  weight_decay: 0.03
   max_seq_length: 2048
   optim: "paged_adamw_8bit"
   neftune_noise_alpha: 0
@@ -38,38 +61,195 @@ training:
   save_total_limit: 5
   load_best: false
   use_grpo: true
-  use_sft: false
+  use_sft: true
+  use_dpo: false
+  seed: 42
+  adam_mini:
+    enabled: false  # Enable Adam-mini optimizer (default: false, uses standard optimizer)
+    # Standard optimizer parameters (recommended to use same values as AdamW)
+    learning_rate: ${training.learning_rate}  # Inherit from main training config
+    weight_decay: ${training.weight_decay}    # Inherit from main training config
+    beta1: 0.9                               # Adam beta1 parameter
+    beta2: 0.999                             # Adam beta2 parameter
+    eps: 1.0e-8                              # Adam epsilon parameter
+    # Transformer-specific parameters (auto-detected from model config if null)
+    dim: null          # Hidden dimension (auto-detected from model.config.hidden_size)
+    n_heads: null      # Number of attention heads (auto-detected from model.config.num_attention_heads)
+    n_kv_heads: null   # Number of key-value heads (auto-detected from model.config.num_key_value_heads, optional)
+    # Special optimization for small training runs
+    use_single_lr_for_values: false  # Set to true for training steps <10k-20k to speed up initial convergence
+
+memory_management:
+  # Memory optimization settings for efficient training pipeline
+  aggressive_cleanup: true          # Enable aggressive memory cleanup between phases
+  log_memory_usage: true           # Log memory usage at key points in training
+
+data_preparation:
+  method: "game" # Options: "classic" | "game"
+  # classic: Simple instruction/output format with basic prompting
+  # game: Complex game format with history, actions, and system messages
 
 grpo:
-  val_data: "test_ru.json"
+  val_data: "test_ru_extended.json"
   train_data: "dataset_ru.json"
   max_completion_length: None
   num_generations: 2
   use_cache: false
+  # GRPO-specific hyperparameters
+  epsilon: 0.2  # KL penalty coefficient for policy gradient
+  beta: 0    # KL regularization parameter
+  loss_type: "dr_grpo"
+  # Reward function configuration
+  reward_function:
+    type: "combined"  # Options: "original" (strict JSON), "json_validation", "action_extraction", "combined"
+    json_weight: 0.3  # Weight for JSON format validation (0.0-1.0)
+    action_weight: 0.7  # Weight for action extraction correctness (0.0-1.0)
+    # Note: weights are normalized, so they don't need to sum to 1.0
+  # Generation parameters (maintained for backward compatibility, but can reference global defaults)
+  temperature: ${generation.temperature}      # Sampling temperature for generation
+  top_k: ${generation.top_k}                  # Top-k sampling parameter
+  top_p: ${generation.top_p}                  # Top-p (nucleus) sampling parameter
+  do_sample: ${generation.do_sample}          # Enable sampling during generation
+  response_length: ${generation.max_new_tokens} # Maximum response length for completions
+  # Reference model settings (optional - uses same model by default)
+  use_ref_model: false  # Whether to use a separate reference model
+  ref_model_name: null  # Reference model name (if different from base model)
+  # VLLM integration (TRL native support for faster generation)
+  use_vllm: false                      # Enable VLLM for accelerated batch generation (Linux/Docker only)
+  vllm_mode: "colocate"                # "server" (separate process) or "colocate" (same process)
+  vllm_gpu_memory_utilization: 0.9     # GPU memory utilization ratio for VLLM (0.0-1.0)
+  vllm_enable_sleep_mode: false        # Offload VLLM to CPU during training to save GPU memory
+  vllm_server_host: null               # Server IP/host (only used with vllm_mode="server")
+
+dpo:
+  val_data: "dpo_test.json"
+  train_data: "dpo_dataset.json"
+  max_length: 2048
+  max_prompt_length: 1024
+  max_target_length: 1024
+  # DPO-specific hyperparameters
+  beta: 0.1            # KL penalty coefficient for DPO loss
+  loss_type: "sigmoid" # Loss function type: "sigmoid" or "hinge"
+  # Reference model settings (optional - uses same model by default)
+  use_ref_model: false # Whether to use a separate reference model for DPO
+  ref_model_name: null # Reference model name (if different from base model)
+
+optuna:
+  enabled: false                   # Enable/disable Optuna hyperparameter optimization
+  n_trials: 20                      # Number of trials to run
+
+  # Hyperparameter search spaces - set enabled to false to disable tuning for that parameter
+  learning_rate:
+    enabled: true
+    min: 1e-6
+    max: 1e-4
+    log_scale: true
+
+  num_train_epochs:
+    enabled: true
+    min: 0.5
+    max: 5.0
+
+  weight_decay:
+    enabled: true
+    min: 0.0
+    max: 0.3
+
+  warmup_steps:
+    enabled: true
+    min: 0
+    max: 30
 
 paths:
   data_dir: "data"
+  test_data: "test_ru_extended.json"
+  train_data: "dataset_ru_extended.json"
+  gguf_directory: custom-model
   merged_model_path: "merged_model_fp16"
-  output_dir: "models" # if you change this, change the in run_pipeline
-#  venv_python_path: "T:/projects/LLM_LoRa/venv/Scripts/python.exe"
-  venv_python_path: "python" # for local run write full path to the venv
-  llama_cpp_dir: "../llama.cpp"
+  output_dir: "models" # if you change this, change in run_pipeline
+  llama_cpp_dir: "llama.cpp"
+  venv_python_path: "${paths.venv_python_path:}"
   #  "T:/lm-studio/models/game-model"
   final_weights_path: "models" # if you change this, change in run_pipeline
-  quantized_path: "build/bin/llama-quantize" # for local run path may be different
-#  quantized_path: "llama-quantize.exe"
+#  quantized_path: "build/bin/llama-quantize" # for local run path may be different
+  quantized_path: "llama-quantize.exe"
 
 other:
   cutoff_len: 2048
   hf_login: false
-  hf_token: "INSERT YOUR HUGGING FACE TOKEN HERE"
+
+environment:
+  use_dotenv: true  # Set to true for local development, false for Docker/production
 
 testing:
+  data_source_mode: "separate_validation"  # Options: "auto_split", "separate_validation", "separate_files"
+  test_split_ratio: 0.05  # Used for auto_split mode
+  val_data_file: "test_ru.json"  # Validation file used for separate_validation mode
   manual_lmstudio_test: false # use only for local run
   test: true
-  test_dataset: "data/test_ru.json"
+  test_dataset: "${paths.data_dir}/test_ru_extended.json"
   output_test_file: "../test.json"
   prompt_for_deepeval: "test_prompt"
+
+  parallel_execution:
+    enabled: true              # Enable/disable parallel test execution
+    max_concurrent_requests: 8  # Maximum concurrent API requests for async execution
+
+  deepeval_testing:
+    enabled: true  # Enable DeepEval metrics alongside action validation (default: false for backward compatibility)
+    run_all_metrics: true  # Run all metrics or just action check
+    metrics:  # Which DeepEval metrics to run
+      - unintended_answer_mention     # Detects when model reveals the answer
+      - russian_language_quality      # Validates Russian grammar and spelling
+      - game_context_appropriateness  # Checks game context correctness
+
+deepeval:
+  enabled: true
+
+  evaluation_model:
+    type: "custom"  # Options: "mistral", "local", "custom"
+    threshold: 0.7
+    verbose_mode: true
+
+  mistral:
+    api_key: "${oc.env:MISTRAL_API,}"
+    model_name: "mistral-small-latest"
+    temperature: 0.7
+
+  local_model:
+    base_url: "http://localhost:4141"
+    model_name: "gpt-5-mini"
+    timeout: 30
+
+  custom_api:
+    endpoint: "http://localhost:4141"
+    api_key: "${oc.env:CUSTOM_API_KEY,}"
+    model_name: "gpt-5-mini"
+    temperature: 0.7
+    timeout: 30
+
+logging:
+  log_level: "INFO"  # Logging level: "DEBUG" or "INFO"
+  logging_backend: "mlflow" #wand mflow none
+
+  wandb:
+    project_name: "Gemma vika train"
+    anonymous: "allow"
+
+  mlflow:
+    experiment_name: "vika-experiment"
+    tracking_uri: "https://mlflow.komolov.synology.me"
+    log_artifacts: false
+
+  dataset_logging:
+    enabled: false                    # Enable dataset sample logging before training
+    log_level: "INFO"               # Log level for dataset samples: "DEBUG", "INFO", "WARNING"
+    num_samples: 5                  # Number of samples to log from each dataset
+    log_raw_data: true              # Log samples before processing/preparation
+    log_processed_data: true        # Log samples after processing/preparation
+    include_metadata: true          # Include dataset metadata (size, format, etc.)
+    truncate_long_text: true        # Truncate very long text fields for readability
+    max_text_length: 500            # Maximum length for text fields when truncating
 
 
 hydra:

@@ -8,9 +8,9 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-      - ./models:/training_model/models
+      - ./models:/app/models
     environment:
-      - OLLAMA_MODELS=/training_model/models
+      - OLLAMA_MODELS=/app/models
     runtime: nvidia
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:11434" ]
@@ -18,21 +18,45 @@ services:
       timeout: 5s
       retries: 5
 
+  rkllm_converter:
+    build:
+      context: rkllm_files/
+      dockerfile: Dockerfile.rkllm
+    image: rkllm_converter
+    container_name: rkllm_converter
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      # Temporary volumes for conversion I/O
+      - /tmp/rkllm_input:/input
+      - /tmp/rkllm_output:/output
+    environment:
+      - PYTHONUNBUFFERED=1
+    profiles: ["converter"]
+
+
   llm_training:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: llm_training
     volumes:
-      - ./models:/training_model/models
-      - ./data:/training_model/data
-      - ./conf:/training_model/conf
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./conf:/app/conf
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       ollama:
         condition: service_healthy
     environment:
       - OLLAMA_HOST=http://ollama:11434
     runtime: nvidia
+    networks:
+      - mlflow-network
 
 volumes:
   ollama_models:
+
+networks:
+  mlflow-network:
+    external: true

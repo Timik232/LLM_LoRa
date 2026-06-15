@@ -1,0 +1,11 @@
+[cache]
+    type = hardlink
+    protected = true
+[core]
+    remote = storage
+['remote "nas-remote"']
+    url = //diskstation_105/dvc_storage
+['remote "storage"']
+    url = s3://dvc-storage
+    endpointurl = https://minio.komolov.synology.me
+    region = us-east-1

@@ -1,8 +1,9 @@
 import json
+from pathlib import Path
 
 from llama_cpp import Llama
 
-with open("../data/dataset_ru.json", "r", encoding="UTF-8") as f:
+with Path("../data/dataset_ru.json").open(encoding="UTF-8") as f:
     dataset = json.load(f)
 SYSTEM_PROMPT = dataset["system"]
 SYSTEM_TOKEN = 1788

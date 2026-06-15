@@ -1,4 +1,0 @@
-PRIVATE_API = ""
-WANB_API = ""
-HUGGING_FACE_API = ""
-MISTRAL_API = ''

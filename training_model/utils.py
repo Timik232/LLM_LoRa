@@ -1,113 +1,149 @@
-"""Additional functions for the training_model module."""
-import json
-from typing import Any, Dict, List
+"""
+Module with utility functions for training the model.
+"""
 
-from huggingface_hub import login
-from omegaconf import DictConfig, OmegaConf
+import logging
+import os
 
 import wandb
+from huggingface_hub import login
+from omegaconf import DictConfig, OmegaConf
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from wandb.sdk.wandb_run import Run
 
-from .private_api import WANB_API
+from training_model.exceptions import ConfigurationError
 
-# @dataclass
-# class Config:
-#     # model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-#     # model_name = "aifeifei798/DarkIdol-Llama-3.1-8B-Instruct-1.2-Uncensored"
-#     # model_name = "IlyaGusev/saiga_llama3_8b"
-#     model_name = "t-tech/T-lite-it-1.0"
-#     # model_name = "yandex/YandexGPT-5-Lite-8B-pretrain"
-#     dataset_name = "data/dataset_ru.json"
-#     # dataset_name = "ruslanmv/ai-medical-chatbot"
-#     new_model = "tlite7b-chat-vika"
-#     torch_dtype = torch.float16
-#     attn_implementation = "eager"
-#     train_steps = 60
+
+def get_generation_config(
+    cfg: DictConfig, tokenizer: AutoTokenizer | PreTrainedTokenizerBase, method: str = "global"
+) -> dict:
+    """Get generation configuration from config with method-specific overrides.
+
+    Currently used for GRPO training and general evaluation/testing purposes.
+    SFT and DPO don't need generation during training.
+
+    Args:
+        cfg: Configuration object.
+        tokenizer: Tokenizer for setting pad_token_id.
+        method: Training method ("global", "grpo").
+
+    Returns:
+        Dictionary with generation parameters.
+
+    Raises:
+        ConfigurationError: If generation configuration is invalid.
+    """
+    try:
+        # Start with global defaults
+        generation_config = {
+            "do_sample": getattr(cfg.generation, "do_sample", True),
+            "temperature": getattr(cfg.generation, "temperature", 0.7),
+            "top_k": getattr(cfg.generation, "top_k", 50),
+            "top_p": getattr(cfg.generation, "top_p", 0.95),
+            "max_new_tokens": getattr(cfg.generation, "max_new_tokens", 256),
+            "repetition_penalty": getattr(cfg.generation, "repetition_penalty", 1.1),
+            "pad_token_id": (
+                tokenizer.pad_token_id
+                if tokenizer.pad_token_id is not None
+                else tokenizer.eos_token_id
+            ),
+        }
+
+        # Apply GRPO-specific overrides for backward compatibility
+        if method == "grpo" and hasattr(cfg, "grpo"):
+            grpo_config = {
+                "do_sample": getattr(cfg.grpo, "do_sample", generation_config["do_sample"]),
+                "temperature": getattr(
+                    cfg.grpo, "temperature", generation_config["temperature"]
+                ),
+                "top_k": getattr(cfg.grpo, "top_k", generation_config["top_k"]),
+                "top_p": getattr(cfg.grpo, "top_p", generation_config["top_p"]),
+                "max_new_tokens": getattr(
+                    cfg.grpo, "response_length", generation_config["max_new_tokens"]
+                ),
+                "repetition_penalty": generation_config["repetition_penalty"],
+                "pad_token_id": generation_config["pad_token_id"],
+            }
+            generation_config.update(grpo_config)
+
+        # Remove None values and ensure pad_token_id is set
+        generation_config = {k: v for k, v in generation_config.items() if v is not None}
+
+        # Ensure pad_token_id is always set (required for generation)
+        if (
+            "pad_token_id" not in generation_config
+            or generation_config.get("pad_token_id") is None
+        ):
+            # Try multiple fallback options
+            pad_id = tokenizer.pad_token_id
+            if pad_id is None:
+                pad_id = tokenizer.eos_token_id
+            if pad_id is None:
+                pad_id = 0
+            generation_config["pad_token_id"] = pad_id
+            logging.info(f"Set pad_token_id to {pad_id}")
+
+        logging.info(f"Generation config for {method}: {generation_config}")
+        return generation_config
+
+    except Exception as e:
+        raise ConfigurationError(
+            f"Failed to create generation config for {method}: {e}"
+        ) from e
+
+
+def _load_environment_if_needed(cfg: DictConfig) -> None:
+    """Load environment variables from .env if configured to do so."""
+    if cfg.get("environment", {}).get("use_dotenv", False):
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv()
+        except ImportError:
+            pass
 
 
 def tokens_init(cfg: DictConfig) -> Run:
-    """Initialize Weights & Biases logging and configure authentication.
+    """
+    Initialize Weights & Biases logging
+    and configure authentication using environment variables.
+
+    This function reads Hugging Face and Wandb tokens from environment variables:
+        - HF_TOKEN for Hugging Face
+        - WANDB_API_KEY for Weights & Biases
 
     Args:
-        cfg (DictConfig): Configuration object with training parameters
+        cfg (DictConfig): Configuration object with training parameters.
 
     Returns:
-        Run: Initialized Weights & Biases run object
+        Run: Initialized Weights & Biases run object.
     """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Load environment variables if configured to do so
+    _load_environment_if_needed(cfg)
+
     if cfg.other.hf_login:
-        hf_token = cfg.other.hf_token
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token is None:
+            raise OSError("Environment variable 'HF_TOKEN' is not set.")
         login(token=hf_token)
 
-    # wb_token = user_secrets.get_secret("wandb_api_key")
-    wb_token = WANB_API
+    # Weights & Biases login
+    wb_token = os.getenv("WANB_API")
+    if wb_token is None:
+        raise OSError("Environment variable 'WANB_API' is not set.")
+    # wandb.login(key=wb_token)
 
-    wandb.login(key=wb_token)
+    logger.debug(
+        f"Using Weights & Biases token: {wb_token[:8]}..." if wb_token else "No token found",
+    )
     run = wandb.init(
-        project="Fine-tune on Dataset for game",
+        project=cfg.wandb.project_name,
         job_type="training",
         config=OmegaConf.to_container(cfg, resolve=True),
-        anonymous="allow",
+        anonymous=cfg.wandb.anonymous,
     )
     return run
-
-
-def get_user_prompt(data: Dict[str, Any]) -> str:
-    """Construct user prompt from conversation data.
-
-    Args:
-        data (Dict[str, Any]): Dictionary containing conversation history and metadata:
-            - History: List of previous messages
-            - AvailableActions: List of available actions
-            - UserInput: Current user input
-
-    Returns:
-        str: Formatted prompt string with conversation context
-    """
-    user_message = (
-        "Системное сообщение, которому ты должен следовать, отмечено словом 'system'. "
-        "Предыдущие сообщения пользователя отмечены словом 'user'. Твои предыдущие сообщения отмечены словом 'VIKA'. "
-        "\n\nИстория сообщений:"
-    )
-    for message in data["History"]:
-        user_message += f"\n{message}"
-    user_message += f"\n\nТы можешь совершать только действия из представленного списка.\nДоступные действия:\n Разговор, {', '.join(data['AvailableActions'])}"
-    user_message += f"\n\nОтветь на сообщение пользователя, беря во внимания всю предыдущую информацию.\nСообщение пользователя:\n{data['UserInput']}"
-    return user_message
-
-
-def dataset_to_json(dataset: Dict[str, Any], filename: str) -> List[Dict[str, str]]:
-    """Convert dataset to JSON format and save to file.
-
-    Args:
-        dataset (Dict[str, Any]): Source dataset dictionary containing:
-            - system: System prompt template
-            - examples: Dictionary of conversation examples
-        filename (str): Output file path
-
-    Returns:
-        List[Dict[str, str]]: List of generated JSON objects with conversation data
-    """
-    json_objects = []
-    system = dataset["system"]
-    dataset = dataset["examples"]
-
-    with open(filename, "w", encoding="utf-8") as file:
-        file.write("")
-
-    for row in dataset.keys():
-        system_message = system
-        user_message = get_user_prompt(dataset[row]["prompt"])
-        # user_message = str(dataset[row]['prompt'])
-        bot_message = str(dataset[row]["answer"])
-
-        json_object = {
-            "system": system_message,
-            "user": user_message,
-            "bot": bot_message,
-        }
-
-        json_objects.append(json_object)
-        with open(filename, "a", encoding="utf-8") as file:
-            file.write(json.dumps(json_object, ensure_ascii=False) + "\n")
-
-    return json_objects

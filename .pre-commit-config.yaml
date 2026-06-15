@@ -1,37 +1,72 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v4.6.0
     hooks:
       - id: check-ast
+        description: Check Python AST syntax
       - id: check-case-conflict
+        description: Check for case conflicts in filenames
       - id: check-toml
+        description: Validate TOML files
       - id: check-yaml
+        description: Validate YAML files
+        args: ['--unsafe']  # Allow custom YAML tags used by Hydra
       - id: check-json
+        description: Validate JSON files
       - id: detect-private-key
+        description: Detect private keys in code
       - id: end-of-file-fixer
-        exclude: '.*\.sh$'
+        description: Fix missing newlines at end of files
+        exclude: '.*\.(sh|bat)$'
       - id: trailing-whitespace
+        description: Remove trailing whitespace
+        exclude: '.*\.(md|rst)$'  # Preserve markdown line breaks
       - id: check-added-large-files
+        description: Check for large files being committed
+        args: ['--maxkb=10240']  # Allow up to 10MB files
+      - id: check-merge-conflict
+        description: Check for merge conflict markers
+      - id: debug-statements
+        description: Check for debug statements (pdb, etc.)
+        language: python
+      - id: mixed-line-ending
+        description: Check for mixed line endings
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.5
+    rev: v0.8.4
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix, --show-fixes, --select, I]
+        name: ruff-linter
+        description: Run Ruff linter with auto-fixes
+        args: [--fix, --show-fixes, --config=pyproject.toml]
       - id: ruff-format
+        name: ruff-formatter
+        description: Run Ruff formatter
+        args: [--config=pyproject.toml]
 
   - repo: https://github.com/psf/black
-    rev: 23.1.0
+    rev: 24.10.0
     hooks:
       - id: black
-        args: [--fast]
-  - repo: https://github.com/PyCQA/flake8
-    rev: 5.0.0
+        name: black-formatter
+        description: Format Python code with Black
+        language_version: python3
+
+
+  - repo: https://github.com/pycqa/bandit
+    rev: 1.7.10
     hooks:
-      - id: flake8
-        additional_dependencies: [pep8-naming, flake8-bugbear ]
-#  - repo: https://github.com/pre-commit/mirrors-mypy
-#    rev: 'v1.15.0'
-#    hooks:
-#      - id: mypy
-#        args: [ --strict ]
+      - id: bandit
+        name: bandit-security-checker
+        description: Run Bandit security linter
+        args: [-c, pyproject.toml]
+        exclude: ^(tests/|legacy)
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        name: codespell-spell-checker
+        description: Check for common misspellings
+        args: [--write-changes]
+        exclude: ^(\.git/|docs/_build/|models/|data/|README.md)

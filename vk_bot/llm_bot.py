@@ -11,7 +11,12 @@ from training_model.private_api import PRIVATE_API
 from .llama31_model import chat_saiga, model
 
 
-def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
+def send_message(
+    user_id: int,
+    msg: str,
+    stiker: int | None = None,
+    attach: str | None = None,
+) -> None:
     try:
         vk.messages.send(
             user_id=user_id,
@@ -25,24 +30,18 @@ def send_message(user_id: int, msg: str, stiker=None, attach=None) -> None:
         return
 
 
-def main():
+def main() -> None:
     print("start")
     for event in longpoll.listen():
         if event.type == VkEventType.MESSAGE_NEW and event.to_me:
             user_id = event.user_id
             if event.text:
                 if len(event.text) > 400:
-                    send_message(
-                        user_id, "Генерация может занимание много время, ожидание"
-                    )
+                    send_message(user_id, "Генерация может занимание много время, ожидание")
                 if len(users_generate) > 0 and user_id not in users_generate:
-                    send_message(
-                        user_id, "Генерация другой человек, ожидание больше обычного"
-                    )
+                    send_message(user_id, "Генерация другой человек, ожидание больше обычного")
                 if len(event.text) > 1200:
-                    send_message(
-                        user_id, "Текст слишком длинный, разрезание несколько частей"
-                    )
+                    send_message(user_id, "Текст слишком длинный, разрезание несколько частей")
                     continue
                 vk.messages.setActivity(peer_id=event.peer_id, type="typing")
                 users_generate.append(user_id)
