@@ -238,7 +238,7 @@ logging:
 
   mlflow:
     experiment_name: "vika-experiment"
-    tracking_uri: "http://localhost:5000"
+    tracking_uri: "https://mlflow.komolov.synology.me"
     log_artifacts: false
 
   dataset_logging:
