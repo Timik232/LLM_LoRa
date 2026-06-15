@@ -789,13 +789,8 @@ def grpo_train(
             bias="none",
             task_type="CAUSAL_LM",
             target_modules=[
-                "up_proj",
-                "down_proj",
-                "gate_proj",
-                "k_proj",
                 "q_proj",
                 "v_proj",
-                "o_proj",
             ],
             inference_mode=False,
         )

@@ -743,13 +743,8 @@ def attach_lora_adapters(model: ModelType, cfg: DictConfig) -> ModelType:
             bias="none",
             task_type="CAUSAL_LM",
             target_modules=[
-                "up_proj",
-                "down_proj",
-                "gate_proj",
-                "k_proj",
                 "q_proj",
                 "v_proj",
-                "o_proj",
             ],
             inference_mode=False,
         )
@@ -806,13 +801,8 @@ def run_sft_training(
             bias="none",
             task_type="CAUSAL_LM",
             target_modules=[
-                "up_proj",
-                "down_proj",
-                "gate_proj",
-                "k_proj",
                 "q_proj",
                 "v_proj",
-                "o_proj",
             ],
             inference_mode=False,
         )

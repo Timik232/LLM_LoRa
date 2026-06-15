@@ -5,8 +5,8 @@ defaults:
 
 
 model:
-  model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
-  new_model: "4b-chat-vika"
+  model_name: "Qwen/Qwen3.5-2B"
+  new_model: "qwen3.5-2b-chinese-style"
   torch_dtype: "bfloat16"
   attn_implementation: "flash_attention_2"
   train_steps: 60
@@ -26,9 +26,9 @@ model:
     hybrid_quantization: false # Enable hybrid quantization
     num_npu_core: 1 # Number of NPU cores to use (1-3)
   lora:
-    r: 16
-    alpha: 64
-    dropout: 0.1
+    r: 8
+    alpha: 16
+    dropout: 0.05
   model_type: "auto" # gemma or gemma3n or auto
 
 # Global generation configuration - shared across all training methods
@@ -60,7 +60,7 @@ training:
   gradient_checkpointing: true
   save_total_limit: 5
   load_best: false
-  use_grpo: true
+  use_grpo: false
   use_sft: true
   use_dpo: false
   seed: 42
