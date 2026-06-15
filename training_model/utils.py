@@ -10,8 +10,9 @@ from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 import wandb
-from training_model.exceptions import ConfigurationError
 from wandb.sdk.wandb_run import Run
+
+from training_model.exceptions import ConfigurationError
 
 
 def get_generation_config(
