@@ -15,6 +15,7 @@ from typing import Any, cast
 
 import requests
 import torch
+import wandb
 from datasets import Dataset
 from omegaconf import DictConfig
 from peft import LoraConfig, PeftModel, get_peft_model
@@ -30,8 +31,6 @@ from transformers import (
     PreTrainedTokenizerBase,
 )
 from trl import SFTConfig, SFTTrainer
-
-import wandb
 
 from .data_preparation import dataset_to_json
 from .dpo_train import dpo_train

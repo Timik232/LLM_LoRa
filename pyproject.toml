@@ -118,8 +118,8 @@ extend-exclude = '''
 
 [tool.bandit]
 exclude_dirs = ["tests", "docs"]
-skips = ["B101", "B601", "B404", "B105", "B603", "B607"]
-# Skip assert_used, shell_injection_process_start, subprocess import, hardcoded password, subprocess calls
+skips = ["B101", "B601", "B404", "B603", "B607"]
+# Skip assert_used, shell_injection_process_start, subprocess import, subprocess calls
 
 [tool.bandit.assert_used]
 exclude = ["*test*.py", "*conftest*.py"]
