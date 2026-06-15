@@ -5,13 +5,13 @@ Module with utility functions for training the model.
 import logging
 import os
 
+import wandb
 from huggingface_hub import login
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
-
-import wandb
-from training_model.exceptions import ConfigurationError
 from wandb.sdk.wandb_run import Run
+
+from training_model.exceptions import ConfigurationError
 
 
 def get_generation_config(
