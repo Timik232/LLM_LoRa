@@ -217,3 +217,7 @@ node_modules/
 
 gptchain/
 db/
+
+
+# Hermes backup (contains secrets!)
+hermes_backup/
