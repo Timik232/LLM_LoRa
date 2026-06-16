@@ -197,14 +197,26 @@ def generate_prompt(tokenizer: PreTrainedTokenizerBase, data_point: dict[str, st
     """
     apply_fn = getattr(tokenizer, "apply_chat_template", None)
     if callable(apply_fn):
-        res = apply_fn(
-            [
-                {"role": "system", "content": data_point["system"]},
-                {"role": "user", "content": data_point["user"]},
-                {"role": "assistant", "content": data_point["bot"]},
-            ],
-            tokenize=False,
-        )
+        try:
+            res = apply_fn(
+                [
+                    {"role": "system", "content": data_point["system"]},
+                    {"role": "user", "content": data_point["user"]},
+                    {"role": "assistant", "content": data_point["bot"]},
+                ],
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+        except TypeError:
+            # Some tokenizers don't support add_generation_prompt kwarg
+            res = apply_fn(
+                [
+                    {"role": "system", "content": data_point["system"]},
+                    {"role": "user", "content": data_point["user"]},
+                    {"role": "assistant", "content": data_point["bot"]},
+                ],
+                tokenize=False,
+            )
         return str(res)
     # Fallback: join messages into a single prompt string
     parts = [
@@ -276,6 +288,8 @@ def generate_and_tokenize_prompt(
         tokenized_full_prompt["input_ids"].append(tokenizer.eos_token_id)
         if "attention_mask" in tokenized_full_prompt:
             tokenized_full_prompt["attention_mask"].append(1)
+    # Return both tokenized data AND raw text for SFTTrainer compatibility
+    tokenized_full_prompt["text"] = full_prompt
     return tokenized_full_prompt
 
 
@@ -742,7 +756,12 @@ def attach_lora_adapters(model: ModelType, cfg: DictConfig) -> ModelType:
             task_type="CAUSAL_LM",
             target_modules=[
                 "q_proj",
+                "k_proj",
                 "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
             ],
             inference_mode=False,
         )
@@ -800,7 +819,12 @@ def run_sft_training(
             task_type="CAUSAL_LM",
             target_modules=[
                 "q_proj",
+                "k_proj",
                 "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
             ],
             inference_mode=False,
         )
@@ -833,7 +857,6 @@ def run_sft_training(
         sft_config = SFTConfig(
             output_dir=cfg.model.new_model,
             max_length=cfg.training.max_seq_length,
-            dataset_kwargs={"skip_prepare_dataset": True},
             packing=False,
             run_name=cfg.model.new_model,
             per_device_train_batch_size=cfg.training.per_device_train_batch_size,
@@ -856,6 +879,7 @@ def run_sft_training(
             report_to=report_to_backend,  # Use dynamic backend selection
             save_total_limit=cfg.training.save_total_limit,
             load_best_model_at_end=cfg.training.load_best,
+            max_grad_norm=cfg.training.get("max_grad_norm", 1.0),
         )
         if cfg.optuna.enabled:
             sft_config.run_name = f"{sft_config.run_name}_optuna"
@@ -1238,6 +1262,28 @@ def merge_adapter_from_checkpoint(
             except AttributeError as e:
                 logger.warning(f"merged_model does not implement save_pretrained: {e}")
             tokenizer.save_pretrained(save_path)
+
+            # Remove MTP (Multi-Token Prediction) config that breaks llama.cpp GGUF export
+            # Qwen3.5 sets mtp_num_hidden_layers=1, which makes llama.cpp expect 25 layers
+            # but only 24 exist, causing "missing tensor blk.24.attn_norm.weight"
+            config_json_path = Path(save_path) / "config.json"
+            if config_json_path.exists():
+                import json as _json
+                try:
+                    cfg_data = _json.loads(config_json_path.read_text(encoding="utf-8"))
+                    keys_removed = []
+                    for k in list(cfg_data.keys()):
+                        if "mtp" in k.lower():
+                            del cfg_data[k]
+                            keys_removed.append(k)
+                    if keys_removed:
+                        config_json_path.write_text(
+                            _json.dumps(cfg_data, indent=2, ensure_ascii=False),
+                            encoding="utf-8",
+                        )
+                        logger.info(f"Removed MTP keys from config.json: {keys_removed}")
+                except Exception as mtp_err:
+                    logger.warning(f"Failed to clean MTP config: {mtp_err}")
         except Exception as e:
             raise ConversionError(f"Failed to merge and save model to {save_path}: {e}") from e
 

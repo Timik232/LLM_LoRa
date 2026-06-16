@@ -26,8 +26,8 @@ model:
     hybrid_quantization: false # Enable hybrid quantization
     num_npu_core: 1 # Number of NPU cores to use (1-3)
   lora:
-    r: 8
-    alpha: 16
+    r: 32
+    alpha: 32
     dropout: 0.05
   model_type: "auto" # gemma or gemma3n or auto
 
@@ -46,18 +46,19 @@ training:
   per_device_train_batch_size: 2
   per_device_eval_batch_size: 2
   gradient_accumulation_steps: 6
-  num_train_epochs: 1.5
-  eval_steps: 50
+  num_train_epochs: 10
+  eval_steps: 20
   logging_steps: 5
-  warmup_steps: 5
-  learning_rate: 3.26e-05
+  warmup_steps: 10
+  learning_rate: 5e-5
   fp16: false
   bf16: true
-  weight_decay: 0.03
+  weight_decay: 0.01
+  max_grad_norm: 1.0
   max_seq_length: 2048
-  optim: "paged_adamw_8bit"
+  optim: "adamw_torch"
   neftune_noise_alpha: 0
-  gradient_checkpointing: true
+  gradient_checkpointing: false
   save_total_limit: 5
   load_best: false
   use_grpo: false
