@@ -1960,7 +1960,7 @@ def main_train(data_dir: str, cfg: DictConfig) -> dict[str, Any]:
         log_memory_usage("Final script cleanup: ", cfg=cfg)
 
         try:
-            test_file_path = Path(data_dir) / "test_ru.json"
+            test_file_path = Path(data_dir) / cfg.paths.test_data
             if not test_file_path.exists():
                 raise DataProcessingError(f"Test dataset file not found: {test_file_path}")
 
