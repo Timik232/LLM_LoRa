@@ -6,14 +6,14 @@ defaults:
 
 model:
   model_name: "AnatoliiPotapov/T-lite-instruct-0.1"
-  new_model: "4b-chat-vika"
+  new_model: "t-lite-trading"
   torch_dtype: "bfloat16"
   attn_implementation: "flash_attention_2"
   train_steps: 60
   outfile: "custom-model.gguf" # if you change this, change the model in run_pipeline
   quant:
     enabled: true
-    convert_to_gguf: true # Enable GGUF conversion in training pipeline
+    convert_to_gguf: false # Enable GGUF conversion in training pipeline
     qtype: "q4_k_m"
     gguf_dir: "${paths.gguf_directory}" # if you change this, change in run_pipeline
     use_8bit: false
@@ -60,7 +60,7 @@ training:
   gradient_checkpointing: true
   save_total_limit: 5
   load_best: false
-  use_grpo: true
+  use_grpo: false
   use_sft: true
   use_dpo: false
   seed: 42
@@ -162,8 +162,8 @@ optuna:
 
 paths:
   data_dir: "data"
-  test_data: "test_ru_extended.json"
-  train_data: "dataset_ru_extended.json"
+  test_data: "dataset_trading_test.json"
+  train_data: "dataset_trading_train.json"
   gguf_directory: custom-model
   merged_model_path: "merged_model_fp16"
   output_dir: "models" # if you change this, change in run_pipeline
@@ -184,7 +184,7 @@ environment:
 testing:
   data_source_mode: "separate_validation"  # Options: "auto_split", "separate_validation", "separate_files"
   test_split_ratio: 0.05  # Used for auto_split mode
-  val_data_file: "test_ru.json"  # Validation file used for separate_validation mode
+  val_data_file: "dataset_trading_test.json"  # Validation file used for separate_validation mode
   manual_lmstudio_test: false # use only for local run
   test: true
   test_dataset: "${paths.data_dir}/test_ru_extended.json"
@@ -237,7 +237,7 @@ logging:
     anonymous: "allow"
 
   mlflow:
-    experiment_name: "vika-experiment"
+    experiment_name: "t-lite-trading"
     tracking_uri: "https://mlflow.komolov.synology.me"
     log_artifacts: false
 

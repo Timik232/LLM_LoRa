@@ -607,9 +607,18 @@ def model_merge_for_converting(cfg: DictConfig, steps: int, save_path: str) -> N
                 f"Failed to load and merge adapter from {adapter_path}: {e}",
             ) from e
 
+        # Cast to target dtype (PEFT adapters are FP32 by default, which causes
+        # merge_and_unload to upcast the entire model to FP32 on save)
+        try:
+            target_dtype = getattr(torch, cfg.model.torch_dtype, torch.bfloat16)
+            merged_model = cast(nn.Module, merged_model.to(target_dtype))  # type: ignore[assignment]
+            logging.info(f"Merged model cast to {cfg.model.torch_dtype}")
+        except Exception as e:
+            logging.warning(f"Failed to cast merged model to {cfg.model.torch_dtype}: {e}")
+
         # Save merged model
         try:
-            merged_model.save_pretrained(save_path)  # type: ignore[attr-defined]
+            merged_model.save_pretrained(save_path, safe_serialization=True)  # type: ignore[attr-defined]
             tokenizer.save_pretrained(save_path)
         except Exception as e:
             raise ConversionError(f"Failed to save merged model to {save_path}: {e}") from e
@@ -865,7 +874,6 @@ def run_sft_training(
             weight_decay=cfg.training.weight_decay,
             neftune_noise_alpha=cfg.training.neftune_noise_alpha,
             gradient_checkpointing_kwargs={"use_reentrant": False},
-            group_by_length=True,
             report_to=report_to_backend,  # Use dynamic backend selection
             save_total_limit=cfg.training.save_total_limit,
             load_best_model_at_end=cfg.training.load_best,
@@ -1243,11 +1251,13 @@ def merge_adapter_from_checkpoint(
             # Cast peft_model to Any before calling merge_and_unload so the
             # Static analyzer does not confuse the return type with a Tensor.
             merged_model = cast(nn.Module, peft_model.merge_and_unload())
+            # Cast to FP16 to avoid FP32 upcast (PEFT adapters default to FP32)
+            merged_model = cast(nn.Module, merged_model.half())  # type: ignore[assignment]
             # merged_model is a model instance; save_pretrained is expected on
             # PreTrainedModel-like objects. Use a suppress block for optional
             # save behavior if the merged model doesn't implement it.
             try:
-                merged_model.save_pretrained(save_path)  # type: ignore[attr-defined]
+                merged_model.save_pretrained(save_path, safe_serialization=True)  # type: ignore[attr-defined]
             except AttributeError as e:
                 logger.warning(f"merged_model does not implement save_pretrained: {e}")
             tokenizer.save_pretrained(save_path)
